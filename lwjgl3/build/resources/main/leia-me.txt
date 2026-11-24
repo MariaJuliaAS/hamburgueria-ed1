@@ -1,0 +1,2 @@
+Coloque aqui as imagens, sons e arquivos de dados do jogo (por exemplo receitas.txt e ranking.txt).
+O jogo roda com esta pasta como diretório de trabalho, então Gdx.files.internal("receitas.txt") encontra os arquivos daqui.

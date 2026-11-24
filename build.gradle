@@ -1,0 +1,28 @@
+buildscript {
+  repositories {
+    mavenCentral()
+    gradlePluginPortal()
+  }
+}
+
+allprojects {
+  apply plugin: 'eclipse'
+  apply plugin: 'idea'
+
+  version = '1.0.0'
+
+  repositories {
+    mavenCentral()
+    google()
+    maven { url 'https://jitpack.io' }
+  }
+}
+
+configure(subprojects) {
+  apply plugin: 'java-library'
+
+  tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 11
+  }
+}

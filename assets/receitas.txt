@@ -1,0 +1,6 @@
+# nome|pontos|ingredientes (utilize os nomes do enum Ingrediente)
+Simples|70|PAO,CARNE,PAO
+X-Burger|100|PAO,CARNE,QUEIJO,PAO
+Vegetariano|90|PAO,QUEIJO,ALFACE,TOMATE,PAO
+X-Salada|130|PAO,CARNE,ALFACE,TOMATE,PAO
+X-Tudo|160|PAO,CARNE,QUEIJO,ALFACE,TOMATE,PAO
