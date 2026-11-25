@@ -175,6 +175,21 @@ public class TestePartida {
         verificar(partida.getPedidoEmPreparo() == null, "deixa de estar em preparo");
         verificar(partida.getCozinha().estaVazia(), "a cozinha é limpa");
         verificar(partida.getVidas() < Partida.VIDAS_INICIAIS, "o jogador perde vida");
+
+        // Com pontos na conta, o cancelamento tira pontos.
+        Partida p2 = partidaComUmCliente();
+        p2.atenderCliente();
+        montarXBurger(p2);
+        p2.entregar();
+        int antes = p2.getPontos();
+        p2.getFila().enfileirar(new Cliente("Zeca", 20f));
+        Pedido segundo = p2.atenderCliente();
+        verificar(antes > 0 && segundo != null, "preparação: pontos acumulados e segundo pedido feito");
+        for (int i = 0; i < 25 && segundo.getStatus() != StatusPedido.CANCELADO; i++) {
+            p2.atualizar(1f);
+        }
+        verificar(segundo.getStatus() == StatusPedido.CANCELADO, "cliente que já pediu continua perdendo paciência");
+        verificar(p2.getPontos() == antes - Partida.PENALIDADE_CANCELAMENTO, "cancelamento tira pontos");
     }
 
     private static void testarFimDeJogo() {

@@ -1,5 +1,7 @@
 package com.hamburgueria.logica;
 
+import com.hamburgueria.estruturas.Algoritmos;
+import com.hamburgueria.estruturas.Comparador;
 import com.hamburgueria.estruturas.Fila;
 import com.hamburgueria.estruturas.ListaEncadeada;
 import com.hamburgueria.estruturas.No;
@@ -30,6 +32,7 @@ public class Partida {
     public static final int MAX_PEDIDOS_ATIVOS = 4;
     public static final int VIDAS_INICIAIS = 3;
     public static final int PENALIDADE_ERRO = 20;
+    public static final int PENALIDADE_CANCELAMENTO = 30;
 
     private static final float PRIMEIRO_CLIENTE = 1f;
     private static final float INTERVALO_INICIAL = 12f;
@@ -38,6 +41,10 @@ public class Partida {
     private static final float PACIENCIA_BASE = 45f;
     private static final float PACIENCIA_MINIMA = 20f;
     private static final float PACIENCIA_EXTRA_MAXIMA = 10f;
+
+    /** Pedidos mais perto de desistir (menos paciência sobrando) vêm primeiro. */
+    private static final Comparador<Pedido> POR_URGENCIA =
+            (a, b) -> Float.compare(a.getCliente().getPacienciaAtual(), b.getCliente().getPacienciaAtual());
 
     private static final String[] NOMES = {
             "Ana", "Bia", "Caio", "Davi", "Eva", "Fabi", "Gabi", "Hugo", "Iara", "João"
@@ -85,6 +92,7 @@ public class Partida {
         tempo += delta;
         atualizarClienteDoBalcao(delta);
         atualizarPedidos(delta);
+        ordenarPedidosPorUrgencia();
         atualizarChegadas(delta);
         if (vidas <= 0) {
             fimDeJogo = true;
@@ -119,9 +127,20 @@ public class Partida {
                     pedidoEmPreparo = null;
                     cozinha.limpar();
                 }
-                perderVida(pedido.getCliente().getNome() + " desistiu do pedido");
+                pontos = Math.max(0, pontos - PENALIDADE_CANCELAMENTO);
+                perderVida(pedido.getCliente().getNome() + " desistiu do pedido! -"
+                        + PENALIDADE_CANCELAMENTO + " pontos");
             }
         }
+    }
+
+    /**
+     * Insertion Sort na lista de pedidos ativos pela paciência restante. A lista fica quase ordenada
+     * de um frame para o outro, que é o melhor caso do Insertion Sort. Serve para mostrar quem está mais perto
+     * de desistir; o preparo continua na ordem de chegada (ver primeiroPedidoAguardando).
+     */
+    public void ordenarPedidosPorUrgencia() {
+        Algoritmos.insertionSort(pedidosAtivos, POR_URGENCIA);
     }
 
     private void atualizarChegadas(float delta) {
@@ -170,7 +189,7 @@ public class Partida {
 
     /**
      * Coloca um ingrediente no lanche. Se ainda não há pedido em preparo, começa o
-     * pedido mais antigo que está aguardando. Retorna false se não deu para adicionar.
+     * pedido aguardando mais antigo (quem pediu primeiro). Retorna false se não deu para adicionar.
      */
     public boolean adicionarIngrediente(Ingrediente ingrediente) {
         if (fimDeJogo) {
@@ -219,15 +238,55 @@ public class Partida {
         return ResultadoEntrega.ENTREGUE;
     }
 
+    // ----------------------------------------------------------------- busca
+
+    /** Busca sequencial de um pedido ativo pelo nome do cliente (ignora maiúsculas). Null se não achar. */
+    public Pedido buscarPedidoPorCliente(String nome) {
+        return Algoritmos.buscaSequencial(pedidosAtivos.getInicio(),
+                pedido -> pedido.getCliente().getNome().equalsIgnoreCase(nome));
+    }
+
+    /** Busca sequencial de um cliente na fila pelo nome. Retorna a posição (0 = balcão) ou -1. */
+    public int posicaoNaFila(String nome) {
+        return Algoritmos.indiceSequencial(fila.getNoInicio(),
+                cliente -> cliente.getNome().equalsIgnoreCase(nome));
+    }
+
+    /** Pesquisa por nome nos pedidos ativos e na fila e devolve uma frase pronta para mostrar na tela. */
+    public String pesquisar(String nome) {
+        String procurado = nome == null ? "" : nome.trim();
+        if (procurado.isEmpty()) {
+            return "Digite um nome para pesquisar";
+        }
+        Pedido pedido = buscarPedidoPorCliente(procurado);
+        if (pedido != null) {
+            return "Pedido #" + pedido.getId() + " de " + pedido.getCliente().getNome() + ": "
+                    + pedido.getReceita().getNome() + " (" + pedido.getStatus() + ", paciencia "
+                    + Math.round(pedido.getCliente().getPercentualPaciencia() * 100f) + "%)";
+        }
+        int posicao = posicaoNaFila(procurado);
+        if (posicao != -1) {
+            return procurado + " esta na fila, posicao " + (posicao + 1);
+        }
+        return "\"" + procurado + "\" nao encontrado";
+    }
+
     // ------------------------------------------------------------------ apoio
 
+    /**
+     * Pedido AGUARDANDO mais antigo (menor id), ou seja, do cliente que pediu primeiro.
+     * Não depende da ordem da lista, que é reordenada por urgência.
+     */
     private Pedido primeiroPedidoAguardando() {
+        Pedido maisAntigo = null;
         for (No<Pedido> no = pedidosAtivos.getInicio(); no != null; no = no.getProximo()) {
-            if (no.getDado().getStatus() == StatusPedido.AGUARDANDO) {
-                return no.getDado();
+            Pedido pedido = no.getDado();
+            if (pedido.getStatus() == StatusPedido.AGUARDANDO
+                    && (maisAntigo == null || pedido.getId() < maisAntigo.getId())) {
+                maisAntigo = pedido;
             }
         }
-        return null;
+        return maisAntigo;
     }
 
     private void perderVida(String motivo) {
