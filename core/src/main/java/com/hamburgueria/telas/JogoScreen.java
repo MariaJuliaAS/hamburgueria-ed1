@@ -7,6 +7,8 @@ import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
@@ -27,9 +29,9 @@ public class JogoScreen extends ScreenAdapter {
     private static final float ALTURA_MUNDO = 640f;
     private static final float BALCAO_X = 440f;
     private static final float LARGURA_BALCAO = 40f;
-    private static final float FILA_X = 510f;
-    private static final float FILA_Y = 300f;
-    private static final float ESPERA_Y = 470f;
+    private static final float FILA_X = 520f;
+    private static final float FILA_Y = 250f;
+    private static final float ESPERA_Y = 440f;
     private static final float CLIENTE_LARGURA = 56f;
     private static final float CLIENTE_ALTURA = 80f;
     private static final float CLIENTE_ESPACO = 80f;
@@ -74,6 +76,7 @@ public class JogoScreen extends ScreenAdapter {
     private SpriteBatch batch;
     private ShapeRenderer formas;
     private BitmapFont fonte;
+    private Texture fundoRestaurante;
 
     private String resultadoPesquisa = "";
     private final CampoTexto campo = new CampoTexto();
@@ -91,6 +94,7 @@ public class JogoScreen extends ScreenAdapter {
         batch = new SpriteBatch();
         formas = new ShapeRenderer();
         fonte = new BitmapFont();
+        carregarSpritesCenario();
     }
 
     @Override
@@ -121,6 +125,7 @@ public class JogoScreen extends ScreenAdapter {
 
         animarClientes(delta);
         ScreenUtils.clear(0.13f, 0.14f, 0.18f, 1f);
+        desenharFundo();
         desenharFormas();
         desenharTextos();
     }
@@ -188,7 +193,8 @@ public class JogoScreen extends ScreenAdapter {
         formas.setProjectionMatrix(camera.combined);
         formas.begin(ShapeRenderer.ShapeType.Filled);
 
-        desenharCenario();
+        formas.end();
+        formas.begin(ShapeRenderer.ShapeType.Filled);
 
         int posicao = 0;
         for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
@@ -255,34 +261,17 @@ public class JogoScreen extends ScreenAdapter {
     }
 
 
-    /** Desenha o mapa percorrendo todas as posicoes da matriz Tile[][]. */
-    private void desenharCenario() {
-        for (int linha = 0; linha < Cenario.LINHAS; linha++) {
-            for (int coluna = 0; coluna < Cenario.COLUNAS; coluna++) {
-                Tile tile = cenario.getTile(linha, coluna);
-                float x = coluna * Cenario.TAMANHO_TILE;
-                float y = (Cenario.LINHAS - 1 - linha) * Cenario.TAMANHO_TILE;
+    /** Carrega o fundo estático do restaurante. Personagens, pedidos e montagem ficam em camadas separadas. */
+    private void carregarSpritesCenario() {
+        fundoRestaurante = new Texture(Gdx.files.internal("sprites/background_restaurante.png"));
+        fundoRestaurante.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+    }
 
-                switch (tile) {
-                    case BALCAO:
-                        formas.setColor(0.48f, 0.27f, 0.14f, 1f);
-                        break;
-                    case CHAPA:
-                        formas.setColor(0.28f, 0.30f, 0.33f, 1f);
-                        break;
-                    case BANCADA:
-                        formas.setColor(0.68f, 0.43f, 0.23f, 1f);
-                        break;
-                    default:
-                        boolean alternado = (linha + coluna) % 2 == 0;
-                        formas.setColor(alternado
-                                ? new Color(0.20f, 0.22f, 0.24f, 1f)
-                                : new Color(0.23f, 0.25f, 0.27f, 1f));
-                        break;
-                }
-                formas.rect(x, y, Cenario.TAMANHO_TILE, Cenario.TAMANHO_TILE);
-            }
-        }
+    private void desenharFundo() {
+        batch.setProjectionMatrix(camera.combined);
+        batch.begin();
+        batch.draw(fundoRestaurante, 0f, 0f, LARGURA_MUNDO, ALTURA_MUNDO);
+        batch.end();
     }
 
     private void desenharBarra(float x, float y, float largura, float altura, float percentual) {
@@ -384,6 +373,8 @@ public class JogoScreen extends ScreenAdapter {
         if (batch != null) batch.dispose();
         if (formas != null) formas.dispose();
         if (fonte != null) fonte.dispose();
+        if (fundoRestaurante != null) fundoRestaurante.dispose();
+        fundoRestaurante = null;
         batch = null;
         formas = null;
         fonte = null;

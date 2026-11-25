@@ -69,3 +69,15 @@ Tudo está em `estruturas/Algoritmos.java`, genérico e sem `java.util` (critér
 - Quanto maior o nível, mais difícil: clientes chegam mais rápido, têm menos paciência, até 4 pedidos ao mesmo tempo (3 no nível 1) e receitas com até `3 + nível` ingredientes (máximo 8). `Partida.sortearReceita` só escolhe receitas permitidas pelo nível e cujos ingredientes já estão liberados.
 - Os clientes andam até o lugar deles (fila ou ponto de espera) com uma animação simples (`Cliente.setPosicaoNaTela`, atualizada em `JogoScreen.animarClientes`).
 - `TestePartida` cobre níveis, gorjeta, loja e filtro de receitas.
+
+## Cenário em pixel art
+
+A tela principal usa os props em `assets/sprites/props/` e o piso quadriculado `assets/tiles/chao_xadrez_bege.png`.
+Os sprites foram organizados individualmente para facilitar ajustes de escala e posição em `JogoScreen`.
+Os nomes dos arquivos descrevem os objetos (geladeira, fogão, pia, bancada, prateleiras, plantas, luminária etc.).
+
+## Atualização visual do cenário
+
+A tela de jogo foi reorganizada para apresentar a cozinha à esquerda e o salão à direita, com piso bege quadriculado, parede e molduras de madeira, divisória central, janelas, porta, luminárias e plantas. Os equipamentos existentes são desenhados como sprites individuais e alinhados na parede da cozinha; a ilha de montagem e o balcão ficam em áreas separadas. O salão não inclui mesas para clientes.
+
+A atualização visual está concentrada em `JogoScreen.java` e não altera as classes de lógica (`Partida`, `Cozinha`, pedidos, fila, pontuação, vidas ou loja). A escala de mundo continua em 960 x 640 e usa `FitViewport`.
