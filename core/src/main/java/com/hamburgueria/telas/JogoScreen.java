@@ -29,6 +29,7 @@ public class JogoScreen extends ScreenAdapter {
     private static final float LARGURA_BALCAO = 40f;
     private static final float FILA_X = 510f;
     private static final float FILA_Y = 300f;
+    private static final float ESPERA_Y = 470f;
     private static final float CLIENTE_LARGURA = 56f;
     private static final float CLIENTE_ALTURA = 80f;
     private static final float CLIENTE_ESPACO = 80f;
@@ -62,6 +63,11 @@ public class JogoScreen extends ScreenAdapter {
     private ShapeRenderer formas;
     private BitmapFont fonte;
 
+    private String resultadoPesquisa = "";
+    // O diálogo de texto responde em outra thread: ele só guarda o texto e o render() faz a busca.
+    private volatile String pesquisaPendente;
+    private boolean pesquisando;
+
     public JogoScreen(HamburgueriaGame jogo, Partida partida) {
         this.jogo = jogo;
         this.partida = partida;
@@ -85,7 +91,10 @@ public class JogoScreen extends ScreenAdapter {
         }
 
         tratarEntrada();
-        partida.atualizar(Math.min(delta, 0.1f));
+        // A partida fica parada enquanto o jogador digita o nome da pesquisa.
+        if (!pesquisando) {
+            partida.atualizar(Math.min(delta, 0.1f));
+        }
 
         if (partida.estaEmFimDeJogo()) {
             jogo.mostrarGameOver(partida);
@@ -98,8 +107,16 @@ public class JogoScreen extends ScreenAdapter {
     }
 
     private void tratarEntrada() {
+        processarPesquisa();
+        if (pesquisando) {
+            return;
+        }
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             jogo.mostrarMenu();
+            return;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
+            pedirNomeParaPesquisa();
             return;
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) partida.atenderCliente();
@@ -112,6 +129,35 @@ public class JogoScreen extends ScreenAdapter {
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.BACKSPACE)) partida.desfazerIngrediente();
         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) partida.entregar();
+    }
+
+    /** Abre o diálogo para digitar o nome de um cliente. */
+    private void pedirNomeParaPesquisa() {
+        pesquisando = true;
+        Gdx.input.getTextInput(new Input.TextInputListener() {
+            @Override
+            public void input(String texto) {
+                pesquisaPendente = texto == null ? "" : texto;
+            }
+
+            @Override
+            public void canceled() {
+                pesquisaPendente = "";
+            }
+        }, "Pesquisar cliente", "", "Nome do cliente ou do pedido");
+    }
+
+    /** Roda a busca sequencial (pedidos ativos e fila) quando o diálogo devolveu um texto. */
+    private void processarPesquisa() {
+        String texto = pesquisaPendente;
+        if (texto == null) {
+            return;
+        }
+        pesquisaPendente = null;
+        pesquisando = false;
+        if (!texto.trim().isEmpty()) {
+            resultadoPesquisa = partida.pesquisar(texto);
+        }
     }
 
     private void desenharFormas() {
@@ -129,6 +175,20 @@ public class JogoScreen extends ScreenAdapter {
             desenharBarra(x, FILA_Y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
                     cliente.getPercentualPaciencia());
             posicao++;
+        }
+
+        // Quem já fez o pedido espera aqui, ao lado da fila, com a paciência ainda correndo.
+        int esperando = 0;
+        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
+            Pedido pedido = no.getDado();
+            float x = FILA_X + esperando * CLIENTE_ESPACO;
+            formas.setColor(pedido == partida.getPedidoEmPreparo()
+                    ? new Color(0.95f, 0.85f, 0.45f, 1f)
+                    : new Color(0.75f, 0.85f, 0.95f, 1f));
+            formas.rect(x, ESPERA_Y, CLIENTE_LARGURA, CLIENTE_ALTURA);
+            desenharBarra(x, ESPERA_Y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
+                    pedido.getCliente().getPercentualPaciencia());
+            esperando++;
         }
 
         int indice = 0;
@@ -211,9 +271,17 @@ public class JogoScreen extends ScreenAdapter {
                 + "    Nivel: " + (partida.getNivel() + 1)
                 + "    Tempo: " + (int) partida.getTempo() + "s", 20f, 630f);
         fonte.draw(batch, "ENTER atende | 1 Pao 2 Carne 3 Queijo 4 Alface 5 Tomate"
-                + " | BACKSPACE desfaz | ESPACO entrega | ESC menu", 20f, 608f);
-        fonte.draw(batch, "Pedidos ativos", CARTAO_X, 580f);
+                + " | BACKSPACE desfaz | ESPACO entrega | F pesquisa | ESC menu", 20f, 608f);
+        fonte.draw(batch, "Pedidos ativos (mais urgentes primeiro)", CARTAO_X, 580f);
+        if (pesquisando) {
+            fonte.draw(batch, "Pesquisando... (jogo pausado)", FILA_X, 200f);
+        } else if (!resultadoPesquisa.isEmpty()) {
+            fonte.setColor(0.6f, 0.9f, 1f, 1f);
+            fonte.draw(batch, resultadoPesquisa, FILA_X, 200f);
+            fonte.setColor(com.badlogic.gdx.graphics.Color.WHITE);
+        }
         fonte.draw(batch, "Fila de clientes", FILA_X, 440f);
+        fonte.draw(batch, "Esperando o lanche", FILA_X, 590f);
 
         int indice = 0;
         for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
@@ -229,6 +297,13 @@ public class JogoScreen extends ScreenAdapter {
         for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
             fonte.draw(batch, no.getDado().getNome(), FILA_X + posicao * CLIENTE_ESPACO, FILA_Y - 6f);
             posicao++;
+        }
+
+        int aguardando = 0;
+        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
+            fonte.draw(batch, no.getDado().getCliente().getNome(), FILA_X + aguardando * CLIENTE_ESPACO,
+                    ESPERA_Y - 6f);
+            aguardando++;
         }
 
         fonte.draw(batch, "Cozinha", 20f, 280f);
