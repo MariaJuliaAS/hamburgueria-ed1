@@ -32,9 +32,9 @@ public class JogoScreen extends ScreenAdapter {
     private static final float FILA_X = 520f;
     private static final float FILA_Y = 250f;
     private static final float ESPERA_Y = 440f;
-    private static final float CLIENTE_LARGURA = 56f;
-    private static final float CLIENTE_ALTURA = 80f;
-    private static final float CLIENTE_ESPACO = 80f;
+    private static final float CLIENTE_LARGURA = 70f;
+    private static final float CLIENTE_ALTURA = 100f;
+    private static final float CLIENTE_ESPACO = 88f;
     private static final float CARTAO_X = 20f;
     private static final float CARTAO_LARGURA = 400f;
     private static final float CARTAO_ALTURA = 50f;
@@ -77,6 +77,8 @@ public class JogoScreen extends ScreenAdapter {
     private ShapeRenderer formas;
     private BitmapFont fonte;
     private Texture fundoRestaurante;
+    private Texture[] spritesIngredientes;
+    private Texture[][] spritesClientes;
 
     private String resultadoPesquisa = "";
     private final CampoTexto campo = new CampoTexto();
@@ -126,7 +128,9 @@ public class JogoScreen extends ScreenAdapter {
         animarClientes(delta);
         ScreenUtils.clear(0.13f, 0.14f, 0.18f, 1f);
         desenharFundo();
+        desenharSpritesClientes();
         desenharFormas();
+        desenharSpritesIngredientes();
         desenharTextos();
     }
 
@@ -201,8 +205,6 @@ public class JogoScreen extends ScreenAdapter {
             Cliente cliente = no.getDado();
             float x = cliente.getTelaX();
             float y = cliente.getTelaY();
-            formas.setColor(0.92f, 0.76f, 0.62f, 1f);
-            formas.rect(x, y, CLIENTE_LARGURA, CLIENTE_ALTURA);
             desenharBarra(x, y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
                     cliente.getPercentualPaciencia());
             posicao++;
@@ -214,10 +216,6 @@ public class JogoScreen extends ScreenAdapter {
             Pedido pedido = no.getDado();
             float x = pedido.getCliente().getTelaX();
             float y = pedido.getCliente().getTelaY();
-            formas.setColor(pedido == partida.getPedidoEmPreparo()
-                    ? new Color(0.95f, 0.85f, 0.45f, 1f)
-                    : new Color(0.75f, 0.85f, 0.95f, 1f));
-            formas.rect(x, y, CLIENTE_LARGURA, CLIENTE_ALTURA);
             desenharBarra(x, y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
                     pedido.getCliente().getPercentualPaciencia());
             esperando++;
@@ -236,27 +234,8 @@ public class JogoScreen extends ScreenAdapter {
             indice++;
         }
 
-        formas.setColor(0.80f, 0.80f, 0.80f, 1f);
-        formas.rect(PILHA_X - 10f, PILHA_Y - 10f, CAMADA_LARGURA + 20f, 8f);
+        // A pilha e os ícones dos ingredientes são desenhados com sprites, não retângulos.
         Pilha<Ingrediente> montagem = partida.getCozinha().getMontagem();
-        int camada = montagem.tamanho() - 1;
-        for (No<Ingrediente> no = montagem.getNoTopo(); no != null; no = no.getProximo()) {
-            formas.setColor(CORES[no.getDado().ordinal()]);
-            formas.rect(PILHA_X, PILHA_Y + camada * CAMADA_ALTURA,
-                    CAMADA_LARGURA, CAMADA_ALTURA - 2f);
-            camada--;
-        }
-
-        // Legenda: só os ingredientes já liberados, com a tecla de cada um.
-        Ingrediente[] todos = Ingrediente.values();
-        int linha = 0;
-        for (int i = 0; i < todos.length; i++) {
-            if (partida.isDesbloqueado(todos[i])) {
-                formas.setColor(CORES[i]);
-                formas.rect(LEGENDA_X, LEGENDA_TOPO - 12f - linha * 20f, 14f, 14f);
-                linha++;
-            }
-        }
         formas.end();
     }
 
@@ -265,12 +244,75 @@ public class JogoScreen extends ScreenAdapter {
     private void carregarSpritesCenario() {
         fundoRestaurante = new Texture(Gdx.files.internal("sprites/background_restaurante.png"));
         fundoRestaurante.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        String[] arquivos = {"pao", "carne", "queijo", "alface", "tomate", "cebola", "picles", "bacon", "ovo"};
+        spritesIngredientes = new Texture[arquivos.length];
+        for (int i = 0; i < arquivos.length; i++) {
+            spritesIngredientes[i] = new Texture(Gdx.files.internal("sprites/ingredientes/" + arquivos[i] + ".png"));
+            spritesIngredientes[i].setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        }
+
+        // 3 personagens, cada um com 3 estados: normal, impaciente (laranja) e furioso.
+        String[] personagens = {"cliente_1", "cliente_2", "cliente_3"};
+        String[] estados = {"normal", "impaciente", "furioso"};
+        spritesClientes = new Texture[personagens.length][estados.length];
+        for (int p = 0; p < personagens.length; p++) {
+            for (int e = 0; e < estados.length; e++) {
+                spritesClientes[p][e] = new Texture(Gdx.files.internal(
+                        "sprites/clientes/" + personagens[p] + "_" + estados[e] + ".png"));
+                spritesClientes[p][e].setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+            }
+        }
     }
 
     private void desenharFundo() {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
         batch.draw(fundoRestaurante, 0f, 0f, LARGURA_MUNDO, ALTURA_MUNDO);
+        batch.end();
+    }
+
+
+    /** Desenha os clientes com sprite e altera a expressão/cor conforme a paciência. */
+    private void desenharSpritesClientes() {
+        batch.setProjectionMatrix(camera.combined);
+        batch.begin();
+        for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
+            desenharCliente(no.getDado());
+        }
+        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
+            desenharCliente(no.getDado().getCliente());
+        }
+        batch.end();
+    }
+
+    private void desenharCliente(Cliente cliente) {
+        int personagem = Math.floorMod(cliente.getNome().hashCode(), spritesClientes.length);
+        float paciencia = cliente.getPercentualPaciencia();
+        int estado = paciencia > 0.5f ? 0 : (paciencia > 0.25f ? 1 : 2);
+        Texture sprite = spritesClientes[personagem][estado];
+        batch.draw(sprite, cliente.getTelaX(), cliente.getTelaY(), CLIENTE_LARGURA, CLIENTE_ALTURA);
+    }
+
+    /** Desenha os ingredientes montados e os ícones da legenda com sprites pixel art. */
+    private void desenharSpritesIngredientes() {
+        batch.setProjectionMatrix(camera.combined);
+        batch.begin();
+        Pilha<Ingrediente> montagem = partida.getCozinha().getMontagem();
+        int camada = montagem.tamanho() - 1;
+        for (No<Ingrediente> no = montagem.getNoTopo(); no != null; no = no.getProximo()) {
+            Texture sprite = spritesIngredientes[no.getDado().ordinal()];
+            batch.draw(sprite, PILHA_X + 56f, PILHA_Y + camada * 32f, 88f, 32f);
+            camada--;
+        }
+
+        Ingrediente[] todos = Ingrediente.values();
+        int linha = 0;
+        for (int i = 0; i < todos.length; i++) {
+            if (partida.isDesbloqueado(todos[i])) {
+                batch.draw(spritesIngredientes[i], LEGENDA_X, LEGENDA_TOPO - 15f - linha * 20f, 18f, 18f);
+                linha++;
+            }
+        }
         batch.end();
     }
 
@@ -374,7 +416,17 @@ public class JogoScreen extends ScreenAdapter {
         if (formas != null) formas.dispose();
         if (fonte != null) fonte.dispose();
         if (fundoRestaurante != null) fundoRestaurante.dispose();
+        if (spritesIngredientes != null) {
+            for (Texture sprite : spritesIngredientes) if (sprite != null) sprite.dispose();
+        }
+        if (spritesClientes != null) {
+            for (Texture[] grupo : spritesClientes) {
+                for (Texture sprite : grupo) if (sprite != null) sprite.dispose();
+            }
+        }
         fundoRestaurante = null;
+        spritesIngredientes = null;
+        spritesClientes = null;
         batch = null;
         formas = null;
         fonte = null;

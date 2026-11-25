@@ -81,3 +81,7 @@ Os nomes dos arquivos descrevem os objetos (geladeira, fogão, pia, bancada, pra
 A tela de jogo foi reorganizada para apresentar a cozinha à esquerda e o salão à direita, com piso bege quadriculado, parede e molduras de madeira, divisória central, janelas, porta, luminárias e plantas. Os equipamentos existentes são desenhados como sprites individuais e alinhados na parede da cozinha; a ilha de montagem e o balcão ficam em áreas separadas. O salão não inclui mesas para clientes.
 
 A atualização visual está concentrada em `JogoScreen.java` e não altera as classes de lógica (`Partida`, `Cozinha`, pedidos, fila, pontuação, vidas ou loja). A escala de mundo continua em 960 x 640 e usa `FitViewport`.
+
+## Sprites de ingredientes
+
+Os ingredientes do hambúrguer agora são exibidos por sprites pixel art individuais, tanto na pilha de montagem quanto na legenda de ingredientes desbloqueados. Os arquivos ficam em `assets/sprites/ingredientes/` e incluem pão, carne, queijo, alface, tomate, cebola, picles, bacon e ovo, além de uma spritesheet combinada.
