@@ -21,6 +21,9 @@ public class TestePartida {
         testarSemPedido();
         testarLimiteDeCamadas();
         testarDificuldade();
+        testarNiveis();
+        testarLoja();
+        testarReceitasPorNivel();
         testarPedidoCancelado();
         testarFimDeJogo();
 
@@ -154,10 +157,168 @@ public class TestePartida {
     private static void testarDificuldade() {
         System.out.println("== Dificuldade ==");
         Partida partida = new Partida(cardapioUnico(), 7L);
-        verificar(partida.getNivel() == 0, "começa no nível 0");
+        verificar(partida.getNivel() == 1, "começa no nível 1");
         partida.atualizar(35f);
-        verificar(partida.getNivel() == 1, "sobe para o nível 1 depois de 30 segundos");
+        verificar(partida.getNivel() == 1, "o nível não sobe só com o tempo");
         verificar(partida.getTempo() == 35f, "tempo acumulado");
+    }
+
+    /** Põe um cliente na fila, atende, monta a receita sorteada e entrega. Não deixa o tempo passar. */
+    private static Pedido entregarRapido(Partida partida) {
+        partida.getFila().enfileirar(new Cliente("Teste", 60f));
+        Pedido pedido = partida.atenderCliente();
+        for (int i = 0; i < pedido.getReceita().getQuantidade(); i++) {
+            partida.adicionarIngrediente(pedido.getReceita().getIngrediente(i));
+        }
+        partida.entregar();
+        return pedido;
+    }
+
+    private static void testarNiveis() {
+        System.out.println("== Níveis, recompensa e gorjeta ==");
+        Partida partida = new Partida(cardapioUnico(), 7L);
+        verificar(partida.getMetaEntregas() == Partida.META_BASE, "meta do nível 1");
+        verificar(partida.getMaxIngredientesPorReceita() == 4, "nível 1: receitas de até 4 ingredientes");
+        verificar(partida.getMaxPedidosAtivos() == 3, "nível 1: até 3 pedidos ao mesmo tempo");
+
+        Pedido primeiro = entregarRapido(partida);
+        verificar(primeiro.calcularGorjeta() == 10, "gorjeta com paciência cheia é 10% da receita");
+        verificar(partida.getMoedas() == 10 + primeiro.calcularGorjeta(), "entrega rende moedas + gorjeta");
+        verificar(partida.getEntreguesNoNivel() == 1, "conta entregas do nível");
+
+        for (int i = 1; i < Partida.META_BASE - 1; i++) {
+            entregarRapido(partida);
+        }
+        verificar(!partida.isNivelConcluido(), "uma entrega antes da meta ainda não conclui");
+        int pontosAntes = partida.getPontos();
+        int moedasAntes = partida.getMoedas();
+        partida.getFila().enfileirar(new Cliente("Zeca", 60f));
+        partida.getFila().enfileirar(new Cliente("Lia", 60f));
+        Pedido ultimo = entregarRapido(partida);
+
+        verificar(partida.isNivelConcluido(), "cumprir a meta conclui o nível");
+        verificar(partida.getPontos() == pontosAntes + ultimo.calcularPontos() + Partida.BONUS_NIVEL_PONTOS,
+                "bônus de pontos do nível");
+        int bonusMoedas = Partida.BONUS_NIVEL_MOEDAS_BASE + Partida.BONUS_NIVEL_MOEDAS_POR_NIVEL;
+        verificar(partida.getUltimaRecompensaMoedas() == bonusMoedas, "recompensa em moedas do nível");
+        verificar(partida.getMoedas() == moedasAntes + ultimo.calcularMoedas() + bonusMoedas, "moedas somadas");
+        verificar(partida.getFila().estaVazia() && partida.getPedidosAtivos().estaVazia(),
+                "balcão limpo ao concluir o nível");
+        verificar(partida.atenderCliente() == null, "não atende com o nível concluído");
+        float tempo = partida.getTempo();
+        partida.atualizar(5f);
+        verificar(partida.getTempo() == tempo, "o tempo para com o nível concluído");
+
+        partida.iniciarProximoNivel();
+        verificar(partida.getNivel() == 2 && !partida.isNivelConcluido(), "próximo nível começa");
+        verificar(partida.getMetaEntregas() == Partida.META_BASE + Partida.META_POR_NIVEL, "meta aumenta");
+        verificar(partida.getMaxIngredientesPorReceita() == 5, "nível 2: receitas de até 5 ingredientes");
+        verificar(partida.getMaxPedidosAtivos() == 4, "nível 2: até 4 pedidos ao mesmo tempo");
+        verificar(partida.getEntreguesNoNivel() == 0, "contador de entregas zera");
+        partida.iniciarProximoNivel();
+        verificar(partida.getNivel() == 2, "não pula de nível sem concluir o atual");
+    }
+
+    private static void testarLoja() {
+        System.out.println("== Loja ==");
+        Partida partida = new Partida(cardapioUnico(), 7L);
+
+        verificar(partida.isDesbloqueado(Ingrediente.PAO) && partida.isDesbloqueado(Ingrediente.TOMATE),
+                "ingredientes básicos já começam liberados");
+        verificar(!partida.isDesbloqueado(Ingrediente.BACON), "bacon começa bloqueado");
+
+        Ingrediente[] itens = Loja.itensAVenda(partida);
+        verificar(itens.length == 4, "4 ingredientes à venda");
+        boolean ordenado = true;
+        for (int i = 1; i < itens.length; i++) {
+            if (itens[i - 1].getPreco() > itens[i].getPreco()) {
+                ordenado = false;
+            }
+        }
+        verificar(ordenado && itens[0] == Ingrediente.CEBOLA, "itens ordenados do mais barato ao mais caro");
+
+        verificar(Loja.comprar(partida, Ingrediente.CEBOLA) == ResultadoCompra.SEM_MOEDAS, "sem moedas não compra");
+        verificar(!partida.isDesbloqueado(Ingrediente.CEBOLA) && partida.getMoedas() == 0, "nada muda sem moedas");
+        verificar(Loja.comprar(partida, Ingrediente.PAO) == ResultadoCompra.JA_DESBLOQUEADO, "já liberado");
+
+        verificar(!partida.gastarMoedas(1), "gastar sem saldo falha");
+        for (int i = 0; i < Partida.META_BASE; i++) {
+            entregarRapido(partida);
+        }
+        int moedas = partida.getMoedas();
+        verificar(moedas >= Ingrediente.CEBOLA.getPreco(), "o nível rendeu moedas para comprar (" + moedas + ")");
+        verificar(Loja.comprar(partida, Ingrediente.CEBOLA) == ResultadoCompra.COMPRADO, "compra com moedas");
+        verificar(partida.getMoedas() == moedas - Ingrediente.CEBOLA.getPreco(), "moedas descontadas");
+        verificar(partida.isDesbloqueado(Ingrediente.CEBOLA), "ingrediente liberado");
+        verificar(Loja.itensAVenda(partida).length == 3, "sai da lista da loja");
+        verificar(Loja.comprar(partida, Ingrediente.CEBOLA) == ResultadoCompra.JA_DESBLOQUEADO, "não compra duas vezes");
+
+        partida.iniciarProximoNivel();
+        partida.getFila().enfileirar(new Cliente("Teste", 60f));
+        partida.atenderCliente();
+        verificar(!partida.adicionarIngrediente(Ingrediente.BACON), "ingrediente bloqueado não entra no lanche");
+        verificar(partida.adicionarIngrediente(Ingrediente.CEBOLA), "ingrediente comprado entra no lanche");
+    }
+
+    private static void testarReceitasPorNivel() {
+        System.out.println("== Receitas por nível ==");
+        Partida partida = new Partida(Cardapio.padrao(), 99L);
+        verificar(receitasSorteadas(partida, 200, 4, false), "nível 1: só receitas de até 4 ingredientes, sem itens da loja");
+
+        // Sobe até o nível 2 sem comprar nada.
+        for (int i = 0; i < partida.getMetaEntregas() && !partida.isNivelConcluido(); i++) {
+            entregarRapido(partida);
+        }
+        partida.iniciarProximoNivel();
+        verificar(partida.getNivel() == 2, "chegou ao nível 2");
+        verificar(receitasSorteadas(partida, 200, 5, false), "nível 2: até 5 ingredientes e ainda sem itens da loja");
+
+        // Libera tudo e sobe até o nível 5: aparecem as receitas grandes.
+        Ingrediente[] todos = Ingrediente.values();
+        for (int i = 0; i < todos.length; i++) {
+            partida.desbloquear(todos[i]);
+        }
+        while (partida.getNivel() < 5) {
+            while (!partida.isNivelConcluido()) {
+                entregarRapido(partida);
+            }
+            partida.iniciarProximoNivel();
+        }
+        verificar(partida.getMaxIngredientesPorReceita() == 8, "nível 5: até 8 ingredientes");
+        verificar(receitasSorteadas(partida, 400, 8, true), "nível 5: aparecem receitas de 8 ingredientes");
+
+        Partida limitada = new Partida(new Receita[]{new Receita("Gigante", new Ingrediente[]{
+                Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.QUEIJO, Ingrediente.ALFACE,
+                Ingrediente.TOMATE, Ingrediente.PAO}, 100)}, 5L);
+        limitada.getFila().enfileirar(new Cliente("Teste", 60f));
+        verificar(limitada.atenderCliente() != null, "cardápio só com receita grande ainda gera pedido");
+    }
+
+    /**
+     * Atende várias vezes e confere o limite de ingredientes e se aparecem itens da loja.
+     * Retorna true se nenhuma receita passou do limite e (quando exigido) se alguma chegou ao limite.
+     */
+    private static boolean receitasSorteadas(Partida partida, int vezes, int limite, boolean exigirLimite) {
+        boolean respeitou = true;
+        boolean chegouAoLimite = false;
+        for (int i = 0; i < vezes; i++) {
+            partida.getPedidosAtivos().limpar();
+            partida.getFila().enfileirar(new Cliente("Teste", 60f));
+            Pedido pedido = partida.atenderCliente();
+            if (pedido.getReceita().getQuantidade() > limite) {
+                respeitou = false;
+            }
+            if (pedido.getReceita().getQuantidade() == limite) {
+                chegouAoLimite = true;
+            }
+            for (int j = 0; j < pedido.getReceita().getQuantidade(); j++) {
+                if (!partida.isDesbloqueado(pedido.getReceita().getIngrediente(j))) {
+                    respeitou = false;
+                }
+            }
+        }
+        partida.getPedidosAtivos().limpar(); // não deixa pedido sobrando para os próximos testes
+        return respeitou && (!exigirLimite || chegouAoLimite);
     }
 
     private static void testarPedidoCancelado() {

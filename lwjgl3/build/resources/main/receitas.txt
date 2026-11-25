@@ -1,6 +1,13 @@
 # nome|pontos|ingredientes (utilize os nomes do enum Ingrediente)
+# Receitas com mais ingredientes só aparecem em níveis mais altos, e as que usam
+# ingredientes da loja (CEBOLA, PICLES, BACON, OVO) só depois que forem comprados.
 Simples|70|PAO,CARNE,PAO
 X-Burger|100|PAO,CARNE,QUEIJO,PAO
 Vegetariano|90|PAO,QUEIJO,ALFACE,TOMATE,PAO
 X-Salada|130|PAO,CARNE,ALFACE,TOMATE,PAO
+X-Bacon|140|PAO,CARNE,BACON,QUEIJO,PAO
+Egg Burger|150|PAO,CARNE,OVO,QUEIJO,PAO
 X-Tudo|160|PAO,CARNE,QUEIJO,ALFACE,TOMATE,PAO
+Crocante|170|PAO,CARNE,BACON,CEBOLA,PICLES,PAO
+Gourmet|200|PAO,CARNE,BACON,OVO,CEBOLA,QUEIJO,PAO
+Mega|240|PAO,CARNE,BACON,QUEIJO,OVO,ALFACE,TOMATE,PAO

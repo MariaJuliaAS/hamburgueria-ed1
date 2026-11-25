@@ -82,6 +82,22 @@ public class Pedido {
         return receita.getPontos() + bonus;
     }
 
+    /** Gorjeta em moedas: até 10% do valor da receita, proporcional à paciência que sobrou. */
+    public int calcularGorjeta() {
+        if (status != StatusPedido.ENTREGUE) {
+            return 0;
+        }
+        return Math.round(receita.getPontos() * cliente.getPercentualPaciencia() * 0.1f);
+    }
+
+    /** Moedas ganhas na entrega: 10% do valor da receita mais a gorjeta. */
+    public int calcularMoedas() {
+        if (status != StatusPedido.ENTREGUE) {
+            return 0;
+        }
+        return receita.getPontos() / 10 + calcularGorjeta();
+    }
+
     public int getId() {
         return id;
     }

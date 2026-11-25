@@ -23,9 +23,24 @@ public final class Cardapio {
                 new Receita("X-Salada", new Ingrediente[]{
                         Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.ALFACE, Ingrediente.TOMATE,
                         Ingrediente.PAO}, 130),
+                new Receita("X-Bacon", new Ingrediente[]{
+                        Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.BACON, Ingrediente.QUEIJO,
+                        Ingrediente.PAO}, 140),
+                new Receita("Egg Burger", new Ingrediente[]{
+                        Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.OVO, Ingrediente.QUEIJO,
+                        Ingrediente.PAO}, 150),
                 new Receita("X-Tudo", new Ingrediente[]{
                         Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.QUEIJO, Ingrediente.ALFACE,
-                        Ingrediente.TOMATE, Ingrediente.PAO}, 160)
+                        Ingrediente.TOMATE, Ingrediente.PAO}, 160),
+                new Receita("Crocante", new Ingrediente[]{
+                        Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.BACON, Ingrediente.CEBOLA,
+                        Ingrediente.PICLES, Ingrediente.PAO}, 170),
+                new Receita("Gourmet", new Ingrediente[]{
+                        Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.BACON, Ingrediente.OVO,
+                        Ingrediente.CEBOLA, Ingrediente.QUEIJO, Ingrediente.PAO}, 200),
+                new Receita("Mega", new Ingrediente[]{
+                        Ingrediente.PAO, Ingrediente.CARNE, Ingrediente.BACON, Ingrediente.QUEIJO,
+                        Ingrediente.OVO, Ingrediente.ALFACE, Ingrediente.TOMATE, Ingrediente.PAO}, 240)
         };
     }
 

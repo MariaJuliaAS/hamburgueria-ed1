@@ -41,18 +41,30 @@ public class JogoScreen extends ScreenAdapter {
     private static final float CAMADA_LARGURA = 200f;
     private static final float CAMADA_ALTURA = 26f;
 
-    // Mesma ordem do enum Ingrediente: PAO, CARNE, QUEIJO, ALFACE, TOMATE.
+    // Mesma ordem do enum Ingrediente: PAO, CARNE, QUEIJO, ALFACE, TOMATE, CEBOLA, PICLES, BACON, OVO.
     private static final Color[] CORES = {
             new Color(0.85f, 0.62f, 0.28f, 1f),
             new Color(0.40f, 0.22f, 0.12f, 1f),
             new Color(0.98f, 0.80f, 0.20f, 1f),
             new Color(0.40f, 0.70f, 0.25f, 1f),
-            new Color(0.85f, 0.20f, 0.18f, 1f)
+            new Color(0.85f, 0.20f, 0.18f, 1f),
+            new Color(0.80f, 0.65f, 0.85f, 1f),
+            new Color(0.25f, 0.50f, 0.30f, 1f),
+            new Color(0.72f, 0.30f, 0.25f, 1f),
+            new Color(0.97f, 0.95f, 0.80f, 1f)
     };
     private static final int[] TECLAS_INGREDIENTES = {
-            Input.Keys.NUM_1, Input.Keys.NUM_2, Input.Keys.NUM_3,
-            Input.Keys.NUM_4, Input.Keys.NUM_5
+            Input.Keys.NUM_1, Input.Keys.NUM_2, Input.Keys.NUM_3, Input.Keys.NUM_4, Input.Keys.NUM_5,
+            Input.Keys.NUM_6, Input.Keys.NUM_7, Input.Keys.NUM_8, Input.Keys.NUM_9
     };
+    private static final float LEGENDA_X = 780f;
+    private static final float VELOCIDADE_CLIENTE = 6f;
+    private static final float LEGENDA_TOPO = 248f;
+
+    /** Cor usada para desenhar o ingrediente (também na loja). */
+    public static Color corDoIngrediente(Ingrediente ingrediente) {
+        return CORES[ingrediente.ordinal()];
+    }
 
     private final HamburgueriaGame jogo;
     private final Partida partida;
@@ -64,9 +76,7 @@ public class JogoScreen extends ScreenAdapter {
     private BitmapFont fonte;
 
     private String resultadoPesquisa = "";
-    // O diálogo de texto responde em outra thread: ele só guarda o texto e o render() faz a busca.
-    private volatile String pesquisaPendente;
-    private boolean pesquisando;
+    private final CampoTexto campo = new CampoTexto();
 
     public JogoScreen(HamburgueriaGame jogo, Partida partida) {
         this.jogo = jogo;
@@ -89,10 +99,14 @@ public class JogoScreen extends ScreenAdapter {
             jogo.mostrarGameOver(partida);
             return;
         }
+        if (partida.isNivelConcluido()) {
+            jogo.mostrarLoja(partida);
+            return;
+        }
 
         tratarEntrada();
         // A partida fica parada enquanto o jogador digita o nome da pesquisa.
-        if (!pesquisando) {
+        if (!campo.isAtivo()) {
             partida.atualizar(Math.min(delta, 0.1f));
         }
 
@@ -100,15 +114,54 @@ public class JogoScreen extends ScreenAdapter {
             jogo.mostrarGameOver(partida);
             return;
         }
+        if (partida.isNivelConcluido()) {
+            jogo.mostrarLoja(partida);
+            return;
+        }
 
+        animarClientes(delta);
         ScreenUtils.clear(0.13f, 0.14f, 0.18f, 1f);
         desenharFormas();
         desenharTextos();
     }
 
+    /** Faz cada cliente andar até o lugar dele: o slot na fila ou o ponto de espera do lanche. */
+    private void animarClientes(float delta) {
+        int posicao = 0;
+        for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
+            moverPara(no.getDado(), FILA_X + posicao * CLIENTE_ESPACO, FILA_Y, delta);
+            posicao++;
+        }
+        int esperando = 0;
+        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
+            moverPara(no.getDado().getCliente(), FILA_X + esperando * CLIENTE_ESPACO, ESPERA_Y, delta);
+            esperando++;
+        }
+    }
+
+    private void moverPara(Cliente cliente, float alvoX, float alvoY, float delta) {
+        if (!cliente.temPosicaoNaTela()) {
+            cliente.setPosicaoNaTela(LARGURA_MUNDO + CLIENTE_LARGURA, alvoY); // chega pela direita
+        }
+        float passo = Math.min(1f, VELOCIDADE_CLIENTE * delta);
+        cliente.setPosicaoNaTela(cliente.getTelaX() + (alvoX - cliente.getTelaX()) * passo,
+                cliente.getTelaY() + (alvoY - cliente.getTelaY()) * passo);
+    }
+
+    @Override
+    public void show() {
+        Gdx.input.setInputProcessor(campo);
+    }
+
     private void tratarEntrada() {
-        processarPesquisa();
-        if (pesquisando) {
+        boolean acabou = campo.terminou();
+        if (acabou) {
+            String texto = campo.getResultado();
+            if (texto != null && !texto.trim().isEmpty()) {
+                resultadoPesquisa = partida.pesquisar(texto);
+            }
+        }
+        if (acabou || campo.isAtivo()) {
             return;
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
@@ -116,7 +169,7 @@ public class JogoScreen extends ScreenAdapter {
             return;
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
-            pedirNomeParaPesquisa();
+            campo.abrir("Pesquisar cliente pelo nome", "", 12, false);
             return;
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) partida.atenderCliente();
@@ -131,35 +184,6 @@ public class JogoScreen extends ScreenAdapter {
         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) partida.entregar();
     }
 
-    /** Abre o diálogo para digitar o nome de um cliente. */
-    private void pedirNomeParaPesquisa() {
-        pesquisando = true;
-        Gdx.input.getTextInput(new Input.TextInputListener() {
-            @Override
-            public void input(String texto) {
-                pesquisaPendente = texto == null ? "" : texto;
-            }
-
-            @Override
-            public void canceled() {
-                pesquisaPendente = "";
-            }
-        }, "Pesquisar cliente", "", "Nome do cliente ou do pedido");
-    }
-
-    /** Roda a busca sequencial (pedidos ativos e fila) quando o diálogo devolveu um texto. */
-    private void processarPesquisa() {
-        String texto = pesquisaPendente;
-        if (texto == null) {
-            return;
-        }
-        pesquisaPendente = null;
-        pesquisando = false;
-        if (!texto.trim().isEmpty()) {
-            resultadoPesquisa = partida.pesquisar(texto);
-        }
-    }
-
     private void desenharFormas() {
         formas.setProjectionMatrix(camera.combined);
         formas.begin(ShapeRenderer.ShapeType.Filled);
@@ -169,10 +193,11 @@ public class JogoScreen extends ScreenAdapter {
         int posicao = 0;
         for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
             Cliente cliente = no.getDado();
-            float x = FILA_X + posicao * CLIENTE_ESPACO;
+            float x = cliente.getTelaX();
+            float y = cliente.getTelaY();
             formas.setColor(0.92f, 0.76f, 0.62f, 1f);
-            formas.rect(x, FILA_Y, CLIENTE_LARGURA, CLIENTE_ALTURA);
-            desenharBarra(x, FILA_Y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
+            formas.rect(x, y, CLIENTE_LARGURA, CLIENTE_ALTURA);
+            desenharBarra(x, y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
                     cliente.getPercentualPaciencia());
             posicao++;
         }
@@ -181,12 +206,13 @@ public class JogoScreen extends ScreenAdapter {
         int esperando = 0;
         for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
             Pedido pedido = no.getDado();
-            float x = FILA_X + esperando * CLIENTE_ESPACO;
+            float x = pedido.getCliente().getTelaX();
+            float y = pedido.getCliente().getTelaY();
             formas.setColor(pedido == partida.getPedidoEmPreparo()
                     ? new Color(0.95f, 0.85f, 0.45f, 1f)
                     : new Color(0.75f, 0.85f, 0.95f, 1f));
-            formas.rect(x, ESPERA_Y, CLIENTE_LARGURA, CLIENTE_ALTURA);
-            desenharBarra(x, ESPERA_Y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
+            formas.rect(x, y, CLIENTE_LARGURA, CLIENTE_ALTURA);
+            desenharBarra(x, y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
                     pedido.getCliente().getPercentualPaciencia());
             esperando++;
         }
@@ -213,6 +239,17 @@ public class JogoScreen extends ScreenAdapter {
             formas.rect(PILHA_X, PILHA_Y + camada * CAMADA_ALTURA,
                     CAMADA_LARGURA, CAMADA_ALTURA - 2f);
             camada--;
+        }
+
+        // Legenda: só os ingredientes já liberados, com a tecla de cada um.
+        Ingrediente[] todos = Ingrediente.values();
+        int linha = 0;
+        for (int i = 0; i < todos.length; i++) {
+            if (partida.isDesbloqueado(todos[i])) {
+                formas.setColor(CORES[i]);
+                formas.rect(LEGENDA_X, LEGENDA_TOPO - 12f - linha * 20f, 14f, 14f);
+                linha++;
+            }
         }
         formas.end();
     }
@@ -268,16 +305,17 @@ public class JogoScreen extends ScreenAdapter {
         fonte.setColor(com.badlogic.gdx.graphics.Color.WHITE);
         fonte.draw(batch, "Pontos: " + partida.getPontos()
                 + "    Vidas: " + partida.getVidas()
-                + "    Nivel: " + (partida.getNivel() + 1)
-                + "    Tempo: " + (int) partida.getTempo() + "s", 20f, 630f);
-        fonte.draw(batch, "ENTER atende | 1 Pao 2 Carne 3 Queijo 4 Alface 5 Tomate"
-                + " | BACKSPACE desfaz | ESPACO entrega | F pesquisa | ESC menu", 20f, 608f);
+                + "    Moedas: " + partida.getMoedas()
+                + "    Nivel: " + partida.getNivel()
+                + " (" + partida.getEntreguesNoNivel() + "/" + partida.getMetaEntregas() + " entregas)", 20f, 630f);
+        fonte.draw(batch, "ENTER atende | 1-9 ingredientes | BACKSPACE desfaz | ESPACO entrega"
+                + " | F pesquisa | ESC menu", 20f, 608f);
         fonte.draw(batch, "Pedidos ativos (mais urgentes primeiro)", CARTAO_X, 580f);
-        if (pesquisando) {
-            fonte.draw(batch, "Pesquisando... (jogo pausado)", FILA_X, 200f);
+        if (campo.isAtivo()) {
+            fonte.draw(batch, "Pesquisando... (jogo pausado)", FILA_X, 40f);
         } else if (!resultadoPesquisa.isEmpty()) {
             fonte.setColor(0.6f, 0.9f, 1f, 1f);
-            fonte.draw(batch, resultadoPesquisa, FILA_X, 200f);
+            fonte.draw(batch, resultadoPesquisa, FILA_X, 40f);
             fonte.setColor(com.badlogic.gdx.graphics.Color.WHITE);
         }
         fonte.draw(batch, "Fila de clientes", FILA_X, 440f);
@@ -295,15 +333,27 @@ public class JogoScreen extends ScreenAdapter {
 
         int posicao = 0;
         for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
-            fonte.draw(batch, no.getDado().getNome(), FILA_X + posicao * CLIENTE_ESPACO, FILA_Y - 6f);
+            Cliente cliente = no.getDado();
+            fonte.draw(batch, cliente.getNome(), cliente.getTelaX(), cliente.getTelaY() - 6f);
             posicao++;
         }
 
         int aguardando = 0;
         for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
-            fonte.draw(batch, no.getDado().getCliente().getNome(), FILA_X + aguardando * CLIENTE_ESPACO,
-                    ESPERA_Y - 6f);
+            Cliente cliente = no.getDado().getCliente();
+            fonte.draw(batch, cliente.getNome(), cliente.getTelaX(), cliente.getTelaY() - 6f);
             aguardando++;
+        }
+
+        fonte.draw(batch, "Ingredientes", LEGENDA_X, LEGENDA_TOPO + 22f);
+        Ingrediente[] todos = Ingrediente.values();
+        int linha = 0;
+        for (int i = 0; i < todos.length; i++) {
+            if (partida.isDesbloqueado(todos[i])) {
+                fonte.draw(batch, (i + 1) + " " + todos[i].getNome(), LEGENDA_X + 22f,
+                        LEGENDA_TOPO - linha * 20f);
+                linha++;
+            }
         }
 
         fonte.draw(batch, "Cozinha", 20f, 280f);
@@ -314,6 +364,8 @@ public class JogoScreen extends ScreenAdapter {
         fonte.draw(batch, "Camadas: " + partida.getCozinha().tamanho(), 20f, 236f);
         fonte.draw(batch, partida.getUltimoEvento(), 20f, 24f);
         batch.end();
+
+        campo.desenhar(camera.combined, formas, batch, fonte, Gdx.graphics.getDeltaTime());
     }
 
     @Override
@@ -323,6 +375,7 @@ public class JogoScreen extends ScreenAdapter {
 
     @Override
     public void hide() {
+        Gdx.input.setInputProcessor(null);
         dispose();
     }
 

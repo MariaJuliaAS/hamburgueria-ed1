@@ -282,6 +282,16 @@ public class TesteAlgoritmos {
         verificar(RankingArquivo.buscarPontuacao(ranking, 10) == 6, "10 está em 6º lugar (último)");
         verificar(RankingArquivo.buscarPontuacao(ranking, 123) == -1, "pontuação inexistente retorna -1");
         verificar(RankingArquivo.buscarPontuacao(new RegistroRanking[0], 10) == -1, "ranking vazio retorna -1");
+
+        RegistroRanking[] partidas = RankingArquivo.interpretar("Ana|100\nBia|250\nana|300\nBIA|10\nCaio|250\nAna|50\n");
+        RegistroRanking[] melhores = RankingArquivo.melhoresPorJogador(partidas);
+        verificar(melhores.length == 3, "um registro por jogador, sem diferenciar maiúsculas (" + melhores.length + ")");
+        verificar(melhores[0].getPontos() == 300 && melhores[0].getNome().equals("ana"), "melhor pontuação de Ana");
+        verificar(melhores[1].getNome().equals("Bia") && melhores[1].getPontos() == 250, "melhor pontuação de Bia");
+        verificar(melhores[2].getNome().equals("Caio"), "Caio por último, mantendo a ordem decrescente");
+        verificar(Algoritmos.estaOrdenado(melhores, melhores.length, RegistroRanking.POR_PONTOS_DECRESCENTE),
+                "resultado continua ordenado");
+        verificar(RankingArquivo.melhoresPorJogador(new RegistroRanking[0]).length == 0, "ranking vazio por jogador");
     }
 
     // -------------------------------------------------------------- partida

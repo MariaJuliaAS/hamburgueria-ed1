@@ -13,6 +13,9 @@ public class Cliente {
     private final float pacienciaMaxima;
     private float pacienciaAtual;
     private Pedido pedido;
+    // Posição desenhada na tela; a tela a atualiza aos poucos para o cliente "andar" até o destino.
+    private float telaX = Float.NaN;
+    private float telaY = Float.NaN;
 
     public Cliente(String nome, float pacienciaMaxima) {
         if (pacienciaMaxima <= 0f) {
@@ -55,6 +58,23 @@ public class Cliente {
 
     public float getPacienciaAtual() {
         return pacienciaAtual;
+    }
+
+    public boolean temPosicaoNaTela() {
+        return !Float.isNaN(telaX);
+    }
+
+    public float getTelaX() {
+        return telaX;
+    }
+
+    public float getTelaY() {
+        return telaY;
+    }
+
+    public void setPosicaoNaTela(float x, float y) {
+        this.telaX = x;
+        this.telaY = y;
     }
 
     public Pedido getPedido() {
