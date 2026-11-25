@@ -31,11 +31,16 @@ public class Pedido {
      * Se a paciência do cliente acabar, o pedido é cancelado.
      */
     public void atualizar(float delta) {
+        atualizar(delta, 1f);
+    }
+
+    /** Atualiza o pedido; o multiplicador acelera a perda de paciência conforme os dias avançam. */
+    public void atualizar(float delta, float multiplicadorPaciência) {
         if (!estaAtivo()) {
             return;
         }
         tempoEspera += delta;
-        cliente.atualizar(delta);
+        cliente.atualizar(delta * multiplicadorPaciência);
         if (cliente.acabouPaciencia()) {
             status = StatusPedido.CANCELADO;
         }

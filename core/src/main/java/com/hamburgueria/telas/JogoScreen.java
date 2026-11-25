@@ -337,7 +337,7 @@ public class JogoScreen extends ScreenAdapter {
         fonte.draw(batch, "Pontos: " + partida.getPontos()
                 + "    Vidas: " + partida.getVidas()
                 + "    Moedas: " + partida.getMoedas()
-                + "    Nivel: " + partida.getNivel()
+                + "    Dia: " + partida.getNivel()
                 + " (" + partida.getEntreguesNoNivel() + "/" + partida.getMetaEntregas() + " entregas)", 20f, 630f);
         fonte.draw(batch, "ENTER atende | 1-9 ingredientes | BACKSPACE desfaz | ESPACO entrega"
                 + " | F pesquisa | ESC menu", 20f, 608f);

@@ -44,11 +44,14 @@ public class Partida {
     public static final int BONUS_NIVEL_MOEDAS_POR_NIVEL = 10;
 
     private static final float PRIMEIRO_CLIENTE = 1f;
-    private static final float INTERVALO_INICIAL = 11f;
-    private static final float INTERVALO_MINIMO = 4f;
-    private static final float PACIENCIA_BASE = 50f;
-    private static final float PACIENCIA_MINIMA = 22f;
-    private static final float PACIENCIA_EXTRA_MAXIMA = 10f;
+    private static final float INTERVALO_INICIAL = 9.5f;
+    private static final float INTERVALO_MINIMO = 2.5f;
+    private static final float PACIENCIA_BASE = 48f;
+    private static final float PACIENCIA_MINIMA = 20f;
+    private static final float PACIENCIA_EXTRA_MAXIMA = 5f;
+    private static final float REDUCA_INTERVALO_POR_DIA = 1.4f;
+    private static final float REDUCA_PACIENCIA_POR_DIA = 6f;
+    private static final float AUMENTO_DRENAGEM_POR_DIA = 0.12f;
 
     /** Pedidos mais perto de desistir (menos paciência sobrando) vêm primeiro. */
     private static final Comparador<Pedido> POR_URGENCIA =
@@ -111,7 +114,7 @@ public class Partida {
             return;
         }
         tempo += delta;
-        atualizarClienteDoBalcao(delta);
+        atualizarClientesDaFila(delta);
         atualizarPedidos(delta);
         ordenarPedidosPorUrgencia();
         atualizarChegadas(delta);
@@ -122,15 +125,19 @@ public class Partida {
     }
 
     /** Só quem está no balcão perde paciência enquanto espera ser atendido. */
-    private void atualizarClienteDoBalcao(float delta) {
-        if (fila.estaVazia()) {
-            return;
-        }
-        Cliente doBalcao = fila.primeiro();
-        doBalcao.atualizar(delta);
-        if (doBalcao.acabouPaciencia()) {
-            fila.desenfileirar();
-            perderVida(doBalcao.getNome() + " foi embora sem ser atendido");
+    private void atualizarClientesDaFila(float delta) {
+        // Todos os clientes começam a perder paciência assim que entram na fila,
+        // não apenas o que está na frente. Reenfileirar preserva a ordem FIFO.
+        int quantidade = fila.tamanho();
+        float deltaPaciência = delta * multiplicadorDrenagemPaciência();
+        for (int i = 0; i < quantidade; i++) {
+            Cliente cliente = fila.desenfileirar();
+            cliente.atualizar(deltaPaciência);
+            if (cliente.acabouPaciencia()) {
+                perderVida(cliente.getNome() + " desistiu da fila!");
+            } else {
+                fila.enfileirar(cliente);
+            }
         }
     }
 
@@ -141,7 +148,7 @@ public class Partida {
     private void atualizarPedidos(float delta) {
         for (int i = pedidosAtivos.tamanho() - 1; i >= 0; i--) {
             Pedido pedido = pedidosAtivos.obter(i);
-            pedido.atualizar(delta);
+            pedido.atualizar(delta, multiplicadorDrenagemPaciência());
             if (pedido.getStatus() == StatusPedido.CANCELADO) {
                 pedidosAtivos.removerPosicao(i);
                 if (pedido == pedidoEmPreparo) {
@@ -177,13 +184,28 @@ public class Partida {
 
     private Cliente criarCliente() {
         String nome = NOMES[sorteio.nextInt(NOMES.length)];
-        float base = Math.max(PACIENCIA_MINIMA, PACIENCIA_BASE - (nivel - 1) * 4f);
+        float base = Math.max(PACIENCIA_MINIMA, PACIENCIA_BASE - (nivel - 1) * REDUCA_PACIENCIA_POR_DIA);
         float paciencia = base + sorteio.nextFloat() * PACIENCIA_EXTRA_MAXIMA;
         return new Cliente(nome, paciencia);
     }
 
     private float intervaloDeChegada() {
-        return Math.max(INTERVALO_MINIMO, INTERVALO_INICIAL - (nivel - 1) * 1.5f);
+        return Math.max(INTERVALO_MINIMO, INTERVALO_INICIAL - (nivel - 1) * REDUCA_INTERVALO_POR_DIA);
+    }
+
+    /** A cada dia a paciência esgota mais rapidamente, inclusive para quem está na fila. */
+    private float multiplicadorDrenagemPaciência() {
+        return 1f + (nivel - 1) * AUMENTO_DRENAGEM_POR_DIA;
+    }
+
+    /** Intervalo de chegada de clientes no dia atual (segundos). */
+    public float getIntervaloChegadaAtual() {
+        return intervaloDeChegada();
+    }
+
+    /** Multiplicador da velocidade de perda de paciência no dia atual. */
+    public float getMultiplicadorPaciênciaAtual() {
+        return multiplicadorDrenagemPaciência();
     }
 
     // ----------------------------------------------------------- ações do jogador
@@ -345,7 +367,7 @@ public class Partida {
         pedidosAtivos.limpar();
         cozinha.limpar();
         pedidoEmPreparo = null;
-        ultimoEvento = "Nivel " + nivel + " concluido! +" + BONUS_NIVEL_PONTOS + " pontos, +"
+        ultimoEvento = "Dia " + nivel + " concluido! +" + BONUS_NIVEL_PONTOS + " pontos, +"
                 + ultimaRecompensaMoedas + " moedas";
     }
 
@@ -358,7 +380,7 @@ public class Partida {
         entreguesNoNivel = 0;
         nivelConcluido = false;
         tempoParaProximoCliente = PRIMEIRO_CLIENTE;
-        ultimoEvento = "Nivel " + nivel + "! Meta: " + getMetaEntregas() + " entregas";
+        ultimoEvento = "Dia " + nivel + "! Meta: " + getMetaEntregas() + " entregas";
     }
 
     // ------------------------------------------------------------ ingredientes

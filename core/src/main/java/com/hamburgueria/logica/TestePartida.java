@@ -17,6 +17,7 @@ public class TestePartida {
     public static void main(String[] args) {
         testarCozinha();
         testarChegadaEAtendimento();
+        testarFilaPerdendoPaciencia();
         testarEntregas();
         testarSemPedido();
         testarLimiteDeCamadas();
@@ -89,6 +90,22 @@ public class TestePartida {
         verificar(partida.getPedidosAtivos().tamanho() == 1, "pedido entra na lista de ativos");
         verificar(pedido.getStatus() == StatusPedido.AGUARDANDO, "pedido começa aguardando");
         verificar(pedido.getReceita().getNome().equals("X-Burger"), "pedido usa a receita do cardápio");
+    }
+
+
+    private static void testarFilaPerdendoPaciencia() {
+        System.out.println("== Paciência da fila ==");
+        Partida partida = new Partida(cardapioUnico(), 17L);
+        partida.getFila().enfileirar(new Cliente("Fila A", 60f));
+        partida.getFila().enfileirar(new Cliente("Fila B", 60f));
+        partida.atualizar(0.5f);
+        verificar(partida.getFila().tamanho() == 2, "os dois clientes permanecem na fila");
+        verificar(partida.getFila().primeiro().getPacienciaAtual() == 59.5f,
+                "o primeiro cliente perde paciência enquanto espera");
+        verificar(partida.getFila().getNoInicio().getProximo().getDado().getPacienciaAtual() == 59.5f,
+                "o segundo cliente também perde paciência antes de chegar ao balcão");
+        verificar(partida.getIntervaloChegadaAtual() == 9.5f, "dia 1 tem intervalo inicial de chegada");
+        verificar(partida.getMultiplicadorPaciênciaAtual() == 1f, "dia 1 usa drenagem normal");
     }
 
     private static void testarEntregas() {
@@ -214,6 +231,8 @@ public class TestePartida {
         verificar(partida.getMetaEntregas() == Partida.META_BASE + Partida.META_POR_NIVEL, "meta aumenta");
         verificar(partida.getMaxIngredientesPorReceita() == 5, "nível 2: receitas de até 5 ingredientes");
         verificar(partida.getMaxPedidosAtivos() == 4, "nível 2: até 4 pedidos ao mesmo tempo");
+        verificar(partida.getIntervaloChegadaAtual() < 9.5f, "dia 2 reduz o intervalo de chegada");
+        verificar(partida.getMultiplicadorPaciênciaAtual() > 1f, "dia 2 acelera a perda de paciência");
         verificar(partida.getEntreguesNoNivel() == 0, "contador de entregas zera");
         partida.iniciarProximoNivel();
         verificar(partida.getNivel() == 2, "não pula de nível sem concluir o atual");

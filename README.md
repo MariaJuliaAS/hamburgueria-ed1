@@ -85,3 +85,12 @@ A atualização visual está concentrada em `JogoScreen.java` e não altera as c
 ## Sprites de ingredientes
 
 Os ingredientes do hambúrguer agora são exibidos por sprites pixel art individuais, tanto na pilha de montagem quanto na legenda de ingredientes desbloqueados. Os arquivos ficam em `assets/sprites/ingredientes/` e incluem pão, carne, queijo, alface, tomate, cebola, picles, bacon e ovo, além de uma spritesheet combinada.
+
+## Dificuldade progressiva por dia
+
+- As receitas sorteadas ficam progressivamente mais complexas conforme o dia, respeitando ingredientes desbloqueados na loja.
+- O intervalo de chegada começa em 9,5 segundos e diminui 1,4 segundo por dia, até o mínimo de 2,5 segundos.
+- A paciência inicial diminui em 6 segundos por dia, até o mínimo de 20 segundos (mais uma variação aleatória de até 5 segundos).
+- Todos os clientes da fila perdem paciência desde a chegada, não apenas o primeiro; pedidos ativos também perdem paciência mais rápido nos dias avançados.
+- A velocidade de perda de paciência aumenta 12% por dia após o primeiro.
+
