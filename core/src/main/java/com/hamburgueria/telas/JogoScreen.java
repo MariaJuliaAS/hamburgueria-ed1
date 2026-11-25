@@ -6,6 +6,7 @@ import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.utils.Array;
@@ -35,9 +36,11 @@ public class JogoScreen extends ScreenAdapter {
     private static final float CLIENTE_LARGURA = 70f;
     private static final float CLIENTE_ALTURA = 100f;
     private static final float CLIENTE_ESPACO = 88f;
-    private static final float CARTAO_X = 20f;
-    private static final float CARTAO_LARGURA = 400f;
-    private static final float CARTAO_ALTURA = 50f;
+    private static final float PAPEL_LARGURA = 112f;
+    private static final float PAPEL_ALTURA = 165f;
+    private static final float PAPEL_X_DIREITA = 838f;
+    private static final float PAPEL_ESPACO = 124f;
+    private static final float PAPEL_Y = 455f;
     private static final float PILHA_X = 170f;
     private static final float PILHA_Y = 50f;
     private static final float CAMADA_LARGURA = 200f;
@@ -77,6 +80,7 @@ public class JogoScreen extends ScreenAdapter {
     private ShapeRenderer formas;
     private BitmapFont fonte;
     private Texture fundoRestaurante;
+    private Texture spritePapelPedido;
     private Texture[] spritesIngredientes;
     private Texture[][] spritesClientes;
 
@@ -96,6 +100,7 @@ public class JogoScreen extends ScreenAdapter {
         batch = new SpriteBatch();
         formas = new ShapeRenderer();
         fonte = new BitmapFont();
+        fonte.getRegion().getTexture().setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         carregarSpritesCenario();
     }
 
@@ -128,6 +133,7 @@ public class JogoScreen extends ScreenAdapter {
         animarClientes(delta);
         ScreenUtils.clear(0.13f, 0.14f, 0.18f, 1f);
         desenharFundo();
+        desenharPapeisPedidos();
         desenharSpritesClientes();
         desenharFormas();
         desenharSpritesIngredientes();
@@ -221,19 +227,6 @@ public class JogoScreen extends ScreenAdapter {
             esperando++;
         }
 
-        int indice = 0;
-        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
-            Pedido pedido = no.getDado();
-            float y = cartaoY(indice);
-            formas.setColor(pedido == partida.getPedidoEmPreparo()
-                    ? new Color(0.38f, 0.32f, 0.14f, 1f)
-                    : new Color(0.22f, 0.24f, 0.30f, 1f));
-            formas.rect(CARTAO_X, y, CARTAO_LARGURA, CARTAO_ALTURA);
-            desenharBarra(CARTAO_X + 8f, y + 6f, CARTAO_LARGURA - 16f, 6f,
-                    pedido.getCliente().getPercentualPaciencia());
-            indice++;
-        }
-
         // A pilha e os ícones dos ingredientes são desenhados com sprites, não retângulos.
         Pilha<Ingrediente> montagem = partida.getCozinha().getMontagem();
         formas.end();
@@ -243,6 +236,8 @@ public class JogoScreen extends ScreenAdapter {
     /** Carrega o fundo estático do restaurante. Personagens, pedidos e montagem ficam em camadas separadas. */
     private void carregarSpritesCenario() {
         fundoRestaurante = new Texture(Gdx.files.internal("sprites/background_restaurante.png"));
+        spritePapelPedido = new Texture(Gdx.files.internal("sprites/papel_pedido.png"));
+        spritePapelPedido.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         fundoRestaurante.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         String[] arquivos = {"pao", "carne", "queijo", "alface", "tomate", "cebola", "picles", "bacon", "ovo"};
         spritesIngredientes = new Texture[arquivos.length];
@@ -271,6 +266,24 @@ public class JogoScreen extends ScreenAdapter {
         batch.end();
     }
 
+
+    /** Desenha cada pedido em um pergaminho separado, lado a lado. O mais novo fica à direita. */
+    private void desenharPapeisPedidos() {
+        int quantidade = partida.getPedidosAtivos().tamanho();
+        if (quantidade == 0) return;
+        float passo = PAPEL_ESPACO;
+        if (quantidade > 7) passo = Math.min(PAPEL_ESPACO, 808f / (quantidade - 1));
+        float largura = quantidade > 7 ? Math.min(PAPEL_LARGURA, passo - 3f) : PAPEL_LARGURA;
+        batch.setProjectionMatrix(camera.combined);
+        batch.begin();
+        int indice = 0;
+        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
+            float x = PAPEL_X_DIREITA - (quantidade - 1 - indice) * passo;
+            batch.draw(spritePapelPedido, x, PAPEL_Y, largura, PAPEL_ALTURA);
+            indice++;
+        }
+        batch.end();
+    }
 
     /** Desenha os clientes com sprite e altera a expressão/cor conforme a paciência. */
     private void desenharSpritesClientes() {
@@ -326,10 +339,6 @@ public class JogoScreen extends ScreenAdapter {
         formas.rect(x, y, largura * percentual, altura);
     }
 
-    private float cartaoY(int indice) {
-        return 500f - indice * 60f;
-    }
-
     private void desenharTextos() {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
@@ -341,7 +350,6 @@ public class JogoScreen extends ScreenAdapter {
                 + " (" + partida.getEntreguesNoNivel() + "/" + partida.getMetaEntregas() + " entregas)", 20f, 630f);
         fonte.draw(batch, "ENTER atende | 1-9 ingredientes | BACKSPACE desfaz | ESPACO entrega"
                 + " | F pesquisa | ESC menu", 20f, 608f);
-        fonte.draw(batch, "Pedidos ativos (mais urgentes primeiro)", CARTAO_X, 580f);
         if (campo.isAtivo()) {
             fonte.draw(batch, "Pesquisando... (jogo pausado)", FILA_X, 40f);
         } else if (!resultadoPesquisa.isEmpty()) {
@@ -352,15 +360,49 @@ public class JogoScreen extends ScreenAdapter {
         fonte.draw(batch, "Fila de clientes", FILA_X, 440f);
         fonte.draw(batch, "Esperando o lanche", FILA_X, 590f);
 
-        int indice = 0;
+        int quantidadePedidos = partida.getPedidosAtivos().tamanho();
+        int indicePedido = 0;
+        float passoPapeis = PAPEL_ESPACO;
+        if (quantidadePedidos > 7) passoPapeis = Math.min(PAPEL_ESPACO, 808f / (quantidadePedidos - 1));
+        float larguraPapel = quantidadePedidos > 7 ? Math.min(PAPEL_LARGURA, passoPapeis - 3f) : PAPEL_LARGURA;
+        float escalaAnterior = fonte.getScaleX();
+        fonte.getData().setScale(0.62f);
+        GlyphLayout layout = new GlyphLayout();
         for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
             Pedido pedido = no.getDado();
-            float y = cartaoY(indice);
-            fonte.draw(batch, "#" + pedido.getId() + " " + pedido.getCliente().getNome()
-                    + " - " + pedido.getStatus(), CARTAO_X + 8f, y + 44f);
-            fonte.draw(batch, pedido.getReceita().toString(), CARTAO_X + 8f, y + 28f);
-            indice++;
+            float x = PAPEL_X_DIREITA - (quantidadePedidos - 1 - indicePedido) * passoPapeis;
+            float y = PAPEL_Y;
+            float margem = Math.max(8f, larguraPapel * 0.10f);
+            float larguraTexto = larguraPapel - margem * 2f;
+            fonte.setColor(0.20f, 0.14f, 0.10f, 1f);
+            fonte.draw(batch, "PEDIDO #" + pedido.getId(), x + margem, y + PAPEL_ALTURA - 22f);
+            fonte.draw(batch, pedido.getCliente().getNome(), x + margem, y + PAPEL_ALTURA - 36f);
+            fonte.draw(batch, pedido.getReceita().getNome(), x + margem, y + PAPEL_ALTURA - 51f);
+            fonte.draw(batch, "ITENS:", x + margem, y + PAPEL_ALTURA - 65f);
+
+            StringBuilder ingredientesTexto = new StringBuilder();
+            for (int k = 0; k < pedido.getReceita().getQuantidade(); k++) {
+                if (k > 0) ingredientesTexto.append(", ");
+                ingredientesTexto.append(pedido.getReceita().getIngrediente(k).getNome());
+            }
+            String[] partes = ingredientesTexto.toString().split(", ");
+            String linhaTexto = "";
+            int linha = 0;
+            for (String parte : partes) {
+                String candidata = linhaTexto.isEmpty() ? parte : linhaTexto + ", " + parte;
+                layout.setText(fonte, candidata);
+                if (layout.width > larguraTexto && !linhaTexto.isEmpty()) {
+                    fonte.draw(batch, linhaTexto, x + margem, y + PAPEL_ALTURA - 79f - linha * 11f);
+                    linhaTexto = parte;
+                    linha++;
+                } else linhaTexto = candidata;
+            }
+            if (!linhaTexto.isEmpty()) fonte.draw(batch, linhaTexto, x + margem, y + PAPEL_ALTURA - 79f - linha * 11f);
+            fonte.draw(batch, pedido.getStatus().toString(), x + margem, y + 23f);
+            fonte.setColor(com.badlogic.gdx.graphics.Color.WHITE);
+            indicePedido++;
         }
+        fonte.getData().setScale(escalaAnterior);
 
         int posicao = 0;
         for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
@@ -416,6 +458,7 @@ public class JogoScreen extends ScreenAdapter {
         if (formas != null) formas.dispose();
         if (fonte != null) fonte.dispose();
         if (fundoRestaurante != null) fundoRestaurante.dispose();
+        if (spritePapelPedido != null) spritePapelPedido.dispose();
         if (spritesIngredientes != null) {
             for (Texture sprite : spritesIngredientes) if (sprite != null) sprite.dispose();
         }
@@ -425,6 +468,7 @@ public class JogoScreen extends ScreenAdapter {
             }
         }
         fundoRestaurante = null;
+        spritePapelPedido = null;
         spritesIngredientes = null;
         spritesClientes = null;
         batch = null;
