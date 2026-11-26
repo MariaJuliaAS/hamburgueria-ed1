@@ -34,9 +34,8 @@ public class MenuScreen extends ScreenAdapter {
     private final RegistroRanking[] ranking;
     private final RegistroRanking[] topo;
     private String resultadoBusca = "";
-    // O diálogo de texto responde em outra thread: ele só guarda o texto e o render() faz a busca.
-    private volatile String entradaBusca;
-    private boolean digitando;
+    private final CampoTexto campo = new CampoTexto();
+    private boolean digitandoNome;
 
     public MenuScreen(HamburgueriaGame jogo) {
         this.jogo = jogo;
@@ -51,23 +50,36 @@ public class MenuScreen extends ScreenAdapter {
         fonte = new BitmapFont();
 
         ranking = RankingArquivo.carregar();
-        topo = RankingArquivo.melhores(ranking, TAMANHO_TOP);
+        // O top 5 mostra só a melhor pontuação de cada jogador; a busca binária usa todas as partidas.
+        topo = RankingArquivo.melhores(RankingArquivo.melhoresPorJogador(ranking), TAMANHO_TOP);
+    }
+
+    @Override
+    public void show() {
+        Gdx.input.setInputProcessor(campo);
     }
 
     @Override
     public void render(float delta) {
-        processarBusca();
-        if (Gdx.input.isKeyJustPressed(Input.Keys.B) && !digitando) {
-            pedirPontuacao();
+        boolean acabou = campo.terminou();
+        if (acabou) {
+            tratarResultado();
         }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
-                || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
-            jogo.iniciarPartida();
-            return;
-        }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
-            Gdx.app.exit();
-            return;
+        if (!acabou && !campo.isAtivo()) {
+            if (jogo.getNomeJogador() == null) {
+                pedirNome(); // primeira vez no menu: pergunta quem vai jogar
+            } else if (Gdx.input.isKeyJustPressed(Input.Keys.B)) {
+                pedirPontuacao();
+            } else if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
+                pedirNome();
+            } else if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)
+                    || Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+                jogo.iniciarPartida();
+                return;
+            } else if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+                Gdx.app.exit();
+                return;
+            }
         }
 
         ScreenUtils.clear(0.12f, 0.10f, 0.09f, 1f);
@@ -94,8 +106,13 @@ public class MenuScreen extends ScreenAdapter {
         fonte.getData().setScale(1.8f);
         fonte.draw(batch, "PRESSIONE ENTER PARA JOGAR", 285f, 440f);
 
+        fonte.getData().setScale(1.2f);
+        fonte.setColor(new Color(0.6f, 0.9f, 1f, 1f));
+        String nome = jogo.getNomeJogador();
+        fonte.draw(batch, "Jogador: " + (nome == null ? "-" : nome) + "  (N para trocar)", 350f, 410f);
+        fonte.setColor(new Color(1f, 0.82f, 0.43f, 1f));
         fonte.getData().setScale(1.4f);
-        fonte.draw(batch, "TOP 5 - RANKING", 385f, 375f);
+        fonte.draw(batch, "TOP 5 - MELHOR DE CADA JOGADOR", 305f, 375f);
         fonte.getData().setScale(1.2f);
         fonte.setColor(Color.WHITE);
         if (topo.length == 0) {
@@ -110,38 +127,40 @@ public class MenuScreen extends ScreenAdapter {
 
         fonte.getData().setScale(1f);
         fonte.setColor(Color.LIGHT_GRAY);
-        fonte.draw(batch, "B - Pesquisar pontuacao no ranking    |    ESC - Sair", 310f, 70f);
+        fonte.draw(batch, "N - Trocar nome    |    B - Pesquisar pontuacao no ranking    |    ESC - Sair", 270f, 70f);
         batch.end();
+
+        campo.desenhar(camera.combined, formas, batch, fonte, delta);
     }
 
-    /** Abre o diálogo para digitar uma pontuação. */
+    /** Abre a caixa de texto para digitar o nome do jogador. */
+    private void pedirNome() {
+        digitandoNome = true;
+        campo.abrir("Nome do jogador", jogo.getNomeJogador(), 12, false);
+    }
+
+    /** Abre a caixa de texto para digitar uma pontuação. */
     private void pedirPontuacao() {
-        digitando = true;
-        Gdx.input.getTextInput(new Input.TextInputListener() {
-            @Override
-            public void input(String texto) {
-                entradaBusca = texto == null ? "" : texto;
-            }
-
-            @Override
-            public void canceled() {
-                entradaBusca = "";
-            }
-        }, "Pesquisar no ranking", "", "Digite a pontuacao");
+        digitandoNome = false;
+        campo.abrir("Pesquisar pontuacao no ranking", "", 9, true);
     }
 
-    /** Roda a busca binária quando o diálogo devolveu um texto. */
-    private void processarBusca() {
-        String texto = entradaBusca;
-        if (texto == null) {
-            return;
+    /** Chamado quando o jogador confirmou ou cancelou a caixa de texto. */
+    private void tratarResultado() {
+        String texto = campo.getResultado();
+        if (digitandoNome) {
+            if (texto != null && !texto.trim().isEmpty()) {
+                jogo.setNomeJogador(texto);
+            } else if (jogo.getNomeJogador() == null) {
+                jogo.setNomeJogador("Jogador");
+            }
+        } else if (texto != null && !texto.trim().isEmpty()) {
+            buscarPontuacao(texto.trim());
         }
-        entradaBusca = null;
-        digitando = false;
-        texto = texto.trim();
-        if (texto.isEmpty()) {
-            return;
-        }
+    }
+
+    /** Roda a busca binária no ranking ordenado. */
+    private void buscarPontuacao(String texto) {
         int pontos;
         try {
             pontos = Integer.parseInt(texto);
@@ -165,6 +184,7 @@ public class MenuScreen extends ScreenAdapter {
 
     @Override
     public void hide() {
+        Gdx.input.setInputProcessor(null);
         dispose();
     }
 

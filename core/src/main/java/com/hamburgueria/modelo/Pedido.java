@@ -31,11 +31,16 @@ public class Pedido {
      * Se a paciência do cliente acabar, o pedido é cancelado.
      */
     public void atualizar(float delta) {
+        atualizar(delta, 1f);
+    }
+
+    /** Atualiza o pedido; o multiplicador acelera a perda de paciência conforme os dias avançam. */
+    public void atualizar(float delta, float multiplicadorPaciência) {
         if (!estaAtivo()) {
             return;
         }
         tempoEspera += delta;
-        cliente.atualizar(delta);
+        cliente.atualizar(delta * multiplicadorPaciência);
         if (cliente.acabouPaciencia()) {
             status = StatusPedido.CANCELADO;
         }
@@ -80,6 +85,22 @@ public class Pedido {
         }
         int bonus = Math.round(receita.getPontos() * cliente.getPercentualPaciencia() * 0.5f);
         return receita.getPontos() + bonus;
+    }
+
+    /** Gorjeta em moedas: até 10% do valor da receita, proporcional à paciência que sobrou. */
+    public int calcularGorjeta() {
+        if (status != StatusPedido.ENTREGUE) {
+            return 0;
+        }
+        return Math.round(receita.getPontos() * cliente.getPercentualPaciencia() * 0.1f);
+    }
+
+    /** Moedas ganhas na entrega: 10% do valor da receita mais a gorjeta. */
+    public int calcularMoedas() {
+        if (status != StatusPedido.ENTREGUE) {
+            return 0;
+        }
+        return receita.getPontos() / 10 + calcularGorjeta();
     }
 
     public int getId() {

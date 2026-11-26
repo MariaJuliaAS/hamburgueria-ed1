@@ -20,10 +20,13 @@ import java.util.Random;
  *  1. Clientes chegam e entram na Fila (o primeiro fica no balcão).
  *  2. O atendente atende o primeiro da fila: nasce um Pedido, que vai para a ListaEncadeada de pedidos ativos.
  *  3. Na cozinha, o jogador monta o lanche empilhando ingredientes (Pilha).
- *  4. Ao entregar, o lanche é conferido com a receita: acerto dá pontos, erro tira pontos.
- *  5. Quem perde a paciência vai embora e o jogador perde uma vida. Sem vidas, o jogo acaba.
- *
- * A dificuldade sobe com o tempo: os clientes chegam mais rápido e têm menos paciência.
+ *  4. Ao entregar, o lanche é conferido com a receita: acerto dá pontos e moedas (com gorjeta), erro tira pontos.
+ *  5. Quem perde a paciência vai embora (mesmo depois de ter feito o pedido): o jogador perde uma vida e,
+ *     se o pedido já tinha sido feito, também perde pontos.
+ *  6. Cada nível tem uma meta de entregas. Ao cumprir a meta o nível termina, o jogador ganha uma recompensa
+ *     e pode gastar as moedas na loja (Loja) para liberar ingredientes novos antes do próximo nível.
+ *  7. Níveis mais altos têm clientes chegando mais rápido, menos paciência, mais pedidos ao mesmo tempo
+ *     e receitas com mais ingredientes.
  * (java.util.Random só sorteia números; não é uma Collection.)
  */
 public class Partida {
@@ -34,13 +37,21 @@ public class Partida {
     public static final int PENALIDADE_ERRO = 20;
     public static final int PENALIDADE_CANCELAMENTO = 30;
 
+    public static final int META_BASE = 4;
+    public static final int META_POR_NIVEL = 2;
+    public static final int BONUS_NIVEL_PONTOS = 50;
+    public static final int BONUS_NIVEL_MOEDAS_BASE = 20;
+    public static final int BONUS_NIVEL_MOEDAS_POR_NIVEL = 10;
+
     private static final float PRIMEIRO_CLIENTE = 1f;
-    private static final float INTERVALO_INICIAL = 12f;
-    private static final float INTERVALO_MINIMO = 4f;
-    private static final float DURACAO_NIVEL = 30f;
-    private static final float PACIENCIA_BASE = 45f;
+    private static final float INTERVALO_INICIAL = 9.5f;
+    private static final float INTERVALO_MINIMO = 2.5f;
+    private static final float PACIENCIA_BASE = 48f;
     private static final float PACIENCIA_MINIMA = 20f;
-    private static final float PACIENCIA_EXTRA_MAXIMA = 10f;
+    private static final float PACIENCIA_EXTRA_MAXIMA = 5f;
+    private static final float REDUCA_INTERVALO_POR_DIA = 1.4f;
+    private static final float REDUCA_PACIENCIA_POR_DIA = 6f;
+    private static final float AUMENTO_DRENAGEM_POR_DIA = 0.12f;
 
     /** Pedidos mais perto de desistir (menos paciência sobrando) vêm primeiro. */
     private static final Comparador<Pedido> POR_URGENCIA =
@@ -52,6 +63,8 @@ public class Partida {
 
     private final Receita[] cardapio;
     private final Random sorteio;
+    /** Vetor indexado pela posição (ordinal) do ingrediente: true se já está liberado para uso. */
+    private final boolean[] desbloqueados;
 
     private final Fila<Cliente> fila = new Fila<>();
     private final ListaEncadeada<Pedido> pedidosAtivos = new ListaEncadeada<>();
@@ -59,8 +72,13 @@ public class Partida {
     private Pedido pedidoEmPreparo;
 
     private int pontos;
+    private int moedas;
     private int vidas = VIDAS_INICIAIS;
     private int entregues;
+    private int nivel = 1;
+    private int entreguesNoNivel;
+    private boolean nivelConcluido;
+    private int ultimaRecompensaMoedas;
     private float tempo;
     private float tempoParaProximoCliente = PRIMEIRO_CLIENTE;
     private boolean fimDeJogo;
@@ -80,17 +98,23 @@ public class Partida {
             this.cardapio[i] = cardapio[i];
         }
         this.sorteio = new Random(semente);
+
+        Ingrediente[] todos = Ingrediente.values();
+        this.desbloqueados = new boolean[todos.length];
+        for (int i = 0; i < todos.length; i++) {
+            desbloqueados[i] = todos[i].getPreco() == 0;
+        }
     }
 
     // ---------------------------------------------------------------- tempo
 
     /** Faz o jogo andar. O delta é o tempo do frame, em segundos. */
     public void atualizar(float delta) {
-        if (fimDeJogo) {
+        if (fimDeJogo || nivelConcluido) {
             return;
         }
         tempo += delta;
-        atualizarClienteDoBalcao(delta);
+        atualizarClientesDaFila(delta);
         atualizarPedidos(delta);
         ordenarPedidosPorUrgencia();
         atualizarChegadas(delta);
@@ -101,15 +125,19 @@ public class Partida {
     }
 
     /** Só quem está no balcão perde paciência enquanto espera ser atendido. */
-    private void atualizarClienteDoBalcao(float delta) {
-        if (fila.estaVazia()) {
-            return;
-        }
-        Cliente doBalcao = fila.primeiro();
-        doBalcao.atualizar(delta);
-        if (doBalcao.acabouPaciencia()) {
-            fila.desenfileirar();
-            perderVida(doBalcao.getNome() + " foi embora sem ser atendido");
+    private void atualizarClientesDaFila(float delta) {
+        // Todos os clientes começam a perder paciência assim que entram na fila,
+        // não apenas o que está na frente. Reenfileirar preserva a ordem FIFO.
+        int quantidade = fila.tamanho();
+        float deltaPaciência = delta * multiplicadorDrenagemPaciência();
+        for (int i = 0; i < quantidade; i++) {
+            Cliente cliente = fila.desenfileirar();
+            cliente.atualizar(deltaPaciência);
+            if (cliente.acabouPaciencia()) {
+                perderVida(cliente.getNome() + " desistiu da fila!");
+            } else {
+                fila.enfileirar(cliente);
+            }
         }
     }
 
@@ -120,7 +148,7 @@ public class Partida {
     private void atualizarPedidos(float delta) {
         for (int i = pedidosAtivos.tamanho() - 1; i >= 0; i--) {
             Pedido pedido = pedidosAtivos.obter(i);
-            pedido.atualizar(delta);
+            pedido.atualizar(delta, multiplicadorDrenagemPaciência());
             if (pedido.getStatus() == StatusPedido.CANCELADO) {
                 pedidosAtivos.removerPosicao(i);
                 if (pedido == pedidoEmPreparo) {
@@ -156,13 +184,28 @@ public class Partida {
 
     private Cliente criarCliente() {
         String nome = NOMES[sorteio.nextInt(NOMES.length)];
-        float base = Math.max(PACIENCIA_MINIMA, PACIENCIA_BASE - getNivel() * 3f);
+        float base = Math.max(PACIENCIA_MINIMA, PACIENCIA_BASE - (nivel - 1) * REDUCA_PACIENCIA_POR_DIA);
         float paciencia = base + sorteio.nextFloat() * PACIENCIA_EXTRA_MAXIMA;
         return new Cliente(nome, paciencia);
     }
 
     private float intervaloDeChegada() {
-        return Math.max(INTERVALO_MINIMO, INTERVALO_INICIAL - getNivel() * 1.5f);
+        return Math.max(INTERVALO_MINIMO, INTERVALO_INICIAL - (nivel - 1) * REDUCA_INTERVALO_POR_DIA);
+    }
+
+    /** A cada dia a paciência esgota mais rapidamente, inclusive para quem está na fila. */
+    private float multiplicadorDrenagemPaciência() {
+        return 1f + (nivel - 1) * AUMENTO_DRENAGEM_POR_DIA;
+    }
+
+    /** Intervalo de chegada de clientes no dia atual (segundos). */
+    public float getIntervaloChegadaAtual() {
+        return intervaloDeChegada();
+    }
+
+    /** Multiplicador da velocidade de perda de paciência no dia atual. */
+    public float getMultiplicadorPaciênciaAtual() {
+        return multiplicadorDrenagemPaciência();
     }
 
     // ----------------------------------------------------------- ações do jogador
@@ -172,15 +215,15 @@ public class Partida {
      * Retorna o pedido, ou null se não havia cliente ou a cozinha está lotada.
      */
     public Pedido atenderCliente() {
-        if (fimDeJogo || fila.estaVazia()) {
+        if (fimDeJogo || nivelConcluido || fila.estaVazia()) {
             return null;
         }
-        if (pedidosAtivos.tamanho() >= MAX_PEDIDOS_ATIVOS) {
+        if (pedidosAtivos.tamanho() >= getMaxPedidosAtivos()) {
             ultimoEvento = "Cozinha lotada! Entregue um pedido antes";
             return null;
         }
         Cliente cliente = fila.desenfileirar();
-        Receita receita = cardapio[sorteio.nextInt(cardapio.length)];
+        Receita receita = sortearReceita();
         Pedido pedido = new Pedido(cliente, receita);
         pedidosAtivos.adicionar(pedido);
         ultimoEvento = cliente.getNome() + " pediu " + receita.getNome();
@@ -188,11 +231,63 @@ public class Partida {
     }
 
     /**
+     * Sorteia a receita do pedido entre as que o nível permite (quantidade de ingredientes) e cujos
+     * ingredientes já foram liberados. Se nenhuma serve, relaxa o limite do nível e, por último, usa o cardápio todo.
+     */
+    private Receita sortearReceita() {
+        int limite = getMaxIngredientesPorReceita();
+        int elegiveis = contarElegiveis(limite);
+        if (elegiveis == 0) {
+            limite = Integer.MAX_VALUE;
+            elegiveis = contarElegiveis(limite);
+        }
+        if (elegiveis == 0) {
+            return cardapio[sorteio.nextInt(cardapio.length)];
+        }
+        int alvo = sorteio.nextInt(elegiveis);
+        for (int i = 0; i < cardapio.length; i++) {
+            if (receitaElegivel(cardapio[i], limite)) {
+                if (alvo == 0) {
+                    return cardapio[i];
+                }
+                alvo--;
+            }
+        }
+        return cardapio[0];
+    }
+
+    private int contarElegiveis(int limite) {
+        int total = 0;
+        for (int i = 0; i < cardapio.length; i++) {
+            if (receitaElegivel(cardapio[i], limite)) {
+                total++;
+            }
+        }
+        return total;
+    }
+
+    private boolean receitaElegivel(Receita receita, int limite) {
+        if (receita.getQuantidade() > limite) {
+            return false;
+        }
+        for (int i = 0; i < receita.getQuantidade(); i++) {
+            if (!isDesbloqueado(receita.getIngrediente(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Coloca um ingrediente no lanche. Se ainda não há pedido em preparo, começa o
      * pedido aguardando mais antigo (quem pediu primeiro). Retorna false se não deu para adicionar.
      */
     public boolean adicionarIngrediente(Ingrediente ingrediente) {
-        if (fimDeJogo) {
+        if (fimDeJogo || nivelConcluido) {
+            return false;
+        }
+        if (!isDesbloqueado(ingrediente)) {
+            ultimoEvento = ingrediente.getNome() + " ainda nao foi comprado na loja";
             return false;
         }
         if (pedidoEmPreparo == null) {
@@ -208,12 +303,12 @@ public class Partida {
 
     /** Tira o último ingrediente colocado. */
     public boolean desfazerIngrediente() {
-        return !fimDeJogo && cozinha.desfazer();
+        return !fimDeJogo && !nivelConcluido && cozinha.desfazer();
     }
 
     /** Confere o lanche com o pedido e entrega se estiver certo. */
     public ResultadoEntrega entregar() {
-        if (fimDeJogo || pedidoEmPreparo == null) {
+        if (fimDeJogo || nivelConcluido || pedidoEmPreparo == null) {
             return ResultadoEntrega.SEM_PEDIDO;
         }
         if (cozinha.estaVazia()) {
@@ -229,13 +324,83 @@ public class Partida {
         pedido.marcarPronto();
         pedido.entregar();
         int ganhos = pedido.calcularPontos();
+        int ganhoMoedas = pedido.calcularMoedas();
         pontos += ganhos;
+        moedas += ganhoMoedas;
         entregues++;
+        entreguesNoNivel++;
         pedidosAtivos.remover(pedido);
         pedidoEmPreparo = null;
         cozinha.limpar();
-        ultimoEvento = pedido.getCliente().getNome() + " recebeu o lanche! +" + ganhos + " pontos";
+        ultimoEvento = pedido.getCliente().getNome() + " recebeu o lanche! +" + ganhos + " pontos, +"
+                + ganhoMoedas + " moedas";
+        if (entreguesNoNivel >= getMetaEntregas()) {
+            concluirNivel();
+        }
         return ResultadoEntrega.ENTREGUE;
+    }
+
+    // ------------------------------------------------------------------ níveis
+
+    /** Meta de entregas do nível atual. */
+    public int getMetaEntregas() {
+        return META_BASE + (nivel - 1) * META_POR_NIVEL;
+    }
+
+    /** Receitas do nível N podem ter até N + 3 ingredientes (limitado à altura da bancada). */
+    public int getMaxIngredientesPorReceita() {
+        return Math.min(Cozinha.ALTURA_MAXIMA, 3 + nivel);
+    }
+
+    /** Quantos pedidos podem estar ativos ao mesmo tempo: 3 no nível 1 e 4 a partir do nível 2. */
+    public int getMaxPedidosAtivos() {
+        return Math.min(MAX_PEDIDOS_ATIVOS, 2 + nivel);
+    }
+
+    /** Encerra o nível: dá a recompensa e limpa o balcão para a loja. */
+    private void concluirNivel() {
+        nivelConcluido = true;
+        ultimaRecompensaMoedas = BONUS_NIVEL_MOEDAS_BASE + BONUS_NIVEL_MOEDAS_POR_NIVEL * nivel;
+        moedas += ultimaRecompensaMoedas;
+        pontos += BONUS_NIVEL_PONTOS;
+        fila.limpar();
+        pedidosAtivos.limpar();
+        cozinha.limpar();
+        pedidoEmPreparo = null;
+        ultimoEvento = "Dia " + nivel + " concluido! +" + BONUS_NIVEL_PONTOS + " pontos, +"
+                + ultimaRecompensaMoedas + " moedas";
+    }
+
+    /** Sai da loja e começa o próximo nível (mais difícil). Só vale depois de concluir o nível atual. */
+    public void iniciarProximoNivel() {
+        if (!nivelConcluido || fimDeJogo) {
+            return;
+        }
+        nivel++;
+        entreguesNoNivel = 0;
+        nivelConcluido = false;
+        tempoParaProximoCliente = PRIMEIRO_CLIENTE;
+        ultimoEvento = "Dia " + nivel + "! Meta: " + getMetaEntregas() + " entregas";
+    }
+
+    // ------------------------------------------------------------ ingredientes
+
+    public boolean isDesbloqueado(Ingrediente ingrediente) {
+        return desbloqueados[ingrediente.ordinal()];
+    }
+
+    /** Libera o ingrediente (usado pela loja depois de cobrar). */
+    public void desbloquear(Ingrediente ingrediente) {
+        desbloqueados[ingrediente.ordinal()] = true;
+    }
+
+    /** Tira moedas da carteira se houver saldo. Retorna false (sem mexer em nada) se não houver. */
+    public boolean gastarMoedas(int valor) {
+        if (valor < 0 || valor > moedas) {
+            return false;
+        }
+        moedas -= valor;
+        return true;
     }
 
     // ----------------------------------------------------------------- busca
@@ -294,9 +459,22 @@ public class Partida {
         ultimoEvento = motivo;
     }
 
-    /** Nível de dificuldade: sobe um a cada 30 segundos. */
+    /** Nível atual, começando em 1. */
     public int getNivel() {
-        return (int) (tempo / DURACAO_NIVEL);
+        return nivel;
+    }
+
+    public int getEntreguesNoNivel() {
+        return entreguesNoNivel;
+    }
+
+    public boolean isNivelConcluido() {
+        return nivelConcluido;
+    }
+
+    /** Moedas que o nível recém-concluído rendeu de bônus (para mostrar na loja). */
+    public int getUltimaRecompensaMoedas() {
+        return ultimaRecompensaMoedas;
     }
 
     public Fila<Cliente> getFila() {
@@ -317,6 +495,10 @@ public class Partida {
 
     public int getPontos() {
         return pontos;
+    }
+
+    public int getMoedas() {
+        return moedas;
     }
 
     public int getVidas() {

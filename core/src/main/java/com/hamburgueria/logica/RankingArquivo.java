@@ -12,6 +12,7 @@ import com.hamburgueria.modelo.RegistroRanking;
 public final class RankingArquivo {
 
     private static final String ARQUIVO = "ranking.txt";
+    private static final String ARQUIVO_JOGADOR = "jogador.txt";
 
     private RankingArquivo() {
     }
@@ -89,6 +90,54 @@ public final class RankingArquivo {
         } catch (NumberFormatException erro) {
             return null;
         }
+    }
+
+    /** Lê o último nome de jogador usado (jogador.txt). Null se não existir. */
+    public static String carregarUltimoNome() {
+        try {
+            FileHandle arquivo = Gdx.files.local(ARQUIVO_JOGADOR);
+            if (!arquivo.exists()) {
+                return null;
+            }
+            String nome = arquivo.readString("UTF-8").trim();
+            return nome.isEmpty() ? null : nome;
+        } catch (Exception erro) {
+            Gdx.app.error("Ranking", "Nao foi possivel ler o ultimo nome.", erro);
+            return null;
+        }
+    }
+
+    /** Guarda o nome do jogador para o jogo já abrir com ele na próxima vez. */
+    public static void salvarUltimoNome(String nome) {
+        try {
+            Gdx.files.local(ARQUIVO_JOGADOR).writeString(nome == null ? "" : nome.trim(), false, "UTF-8");
+        } catch (Exception erro) {
+            Gdx.app.error("Ranking", "Nao foi possivel salvar o ultimo nome.", erro);
+        }
+    }
+
+    /**
+     * Deixa só a melhor pontuação de cada jogador (nomes iguais, sem diferenciar maiúsculas).
+     * Como o ranking já vem ordenado, a primeira aparição de cada nome é a melhor; para saber se o
+     * nome já entrou usamos busca sequencial no vetor de resultado. O resultado continua ordenado.
+     */
+    public static RegistroRanking[] melhoresPorJogador(RegistroRanking[] rankingOrdenado) {
+        RegistroRanking[] unicos = new RegistroRanking[rankingOrdenado.length];
+        int quantidade = 0;
+        for (int i = 0; i < rankingOrdenado.length; i++) {
+            String nome = rankingOrdenado[i].getNome();
+            int posicao = Algoritmos.indiceSequencial(unicos, quantidade,
+                    registro -> registro.getNome().equalsIgnoreCase(nome));
+            if (posicao == -1) {
+                unicos[quantidade] = rankingOrdenado[i];
+                quantidade++;
+            }
+        }
+        RegistroRanking[] resultado = new RegistroRanking[quantidade];
+        for (int i = 0; i < quantidade; i++) {
+            resultado[i] = unicos[i];
+        }
+        return resultado;
     }
 
     /** Os {@code n} primeiros do ranking já ordenado (ou todos, se houver menos que n). */

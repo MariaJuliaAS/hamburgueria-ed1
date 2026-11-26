@@ -1,2 +1,8 @@
 Coloque aqui as imagens, sons e arquivos de dados do jogo (por exemplo receitas.txt e ranking.txt).
 O jogo roda com esta pasta como diretório de trabalho, então Gdx.files.internal("receitas.txt") encontra os arquivos daqui.
+
+Sprites de clientes:
+- assets/sprites/clientes/cliente_1, cliente_2 e cliente_3: três variações de personagens.
+- Cada personagem possui estados normal, impaciente e furioso.
+- O estado muda conforme a paciência: acima de 50% normal; 50% ou menos impaciente (pele alaranjada); 25% ou menos furioso (pele vermelha).
+- clientes_sheet.png reúne os sprites para visualização.

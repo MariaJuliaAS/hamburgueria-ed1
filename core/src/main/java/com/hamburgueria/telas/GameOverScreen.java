@@ -28,7 +28,7 @@ public class GameOverScreen extends ScreenAdapter {
     private SpriteBatch batch;
     private ShapeRenderer formas;
     private BitmapFont fonte;
-    private boolean solicitouNome;
+    private boolean salvou;
 
     public GameOverScreen(HamburgueriaGame jogo, int pontos, int entregues, float tempo) {
         this.jogo = jogo;
@@ -47,19 +47,9 @@ public class GameOverScreen extends ScreenAdapter {
 
     @Override
     public void show() {
-        if (solicitouNome) return;
-        solicitouNome = true;
-        Gdx.input.getTextInput(new com.badlogic.gdx.Input.TextInputListener() {
-            @Override
-            public void input(String texto) {
-                RankingArquivo.salvar(texto, pontos);
-            }
-
-            @Override
-            public void canceled() {
-                RankingArquivo.salvar("Jogador", pontos);
-            }
-        }, "Salvar pontuacao", "Jogador", "Digite seu nome para o ranking");
+        if (salvou) return;
+        salvou = true;
+        RankingArquivo.salvar(jogo.getNomeJogador(), pontos);
     }
 
     @Override
@@ -94,12 +84,17 @@ public class GameOverScreen extends ScreenAdapter {
         fonte.draw(batch, "Pedidos entregues: " + entregues, 370f, 305f);
         fonte.draw(batch, "Tempo sobrevivido: " + (int) tempo + " segundos", 370f, 265f);
         fonte.setColor(Color.LIGHT_GRAY);
-        fonte.draw(batch, "Sua pontuacao sera registrada no ranking.txt", 315f, 225f);
+        fonte.draw(batch, "Pontuacao salva no ranking como " + nomeExibido(), 315f, 225f);
         fonte.setColor(new Color(1f, 0.82f, 0.43f, 1f));
         fonte.draw(batch, "ENTER ou R - Jogar novamente", 335f, 190f);
         fonte.draw(batch, "ESC - Voltar ao menu", 375f, 155f);
         fonte.getData().setScale(1f);
         batch.end();
+    }
+
+    private String nomeExibido() {
+        String nome = jogo.getNomeJogador();
+        return nome == null ? "Jogador" : nome;
     }
 
     @Override
