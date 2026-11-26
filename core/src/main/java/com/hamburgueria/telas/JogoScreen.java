@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.viewport.FitViewport;
 import com.hamburgueria.HamburgueriaGame;
@@ -41,10 +42,27 @@ public class JogoScreen extends ScreenAdapter {
     private static final float PAPEL_X_DIREITA = 838f;
     private static final float PAPEL_ESPACO = 124f;
     private static final float PAPEL_Y = 455f;
-    private static final float PILHA_X = 170f;
-    private static final float PILHA_Y = 50f;
-    private static final float CAMADA_LARGURA = 200f;
-    private static final float CAMADA_ALTURA = 26f;
+    // Estação de montagem inspirada em jogos de montagem de hambúrguer: ingredientes clicáveis
+    // à esquerda, área de empilhamento ao centro e ações na parte inferior.
+    private static final float SELETOR_X = 38f;
+    private static final float SELETOR_Y = 112f;
+    private static final float BOTAO_INGREDIENTE = 70f;
+    private static final float SELETOR_GAP_X = 12f;
+    private static final float SELETOR_GAP_Y = 12f;
+    private static final float PILHA_X = 340f;
+    private static final float PILHA_Y = 118f;
+    private static final float CAMADA_LARGURA = 130f;
+    private static final float CAMADA_ALTURA = 38f;
+    private static final float AREA_MONTAGEM_X = 305f;
+    private static final float AREA_MONTAGEM_Y = 100f;
+    private static final float AREA_MONTAGEM_LARGURA = 205f;
+    private static final float AREA_MONTAGEM_ALTURA = 310f;
+    private static final float BOTAO_DESFAZER_X = 305f;
+    private static final float BOTAO_DESFAZER_Y = 42f;
+    private static final float BOTAO_ENTREGAR_X = 410f;
+    private static final float BOTAO_ACAO_Y = 42f;
+    private static final float BOTAO_ACAO_LARGURA = 95f;
+    private static final float BOTAO_ACAO_ALTURA = 42f;
 
     // Mesma ordem do enum Ingrediente: PAO, CARNE, QUEIJO, ALFACE, TOMATE, CEBOLA, PICLES, BACON, OVO.
     private static final Color[] CORES = {
@@ -80,9 +98,20 @@ public class JogoScreen extends ScreenAdapter {
     private ShapeRenderer formas;
     private BitmapFont fonte;
     private Texture fundoRestaurante;
+    private Texture fundoCozinha;
+    private boolean telaCozinha = false; // Começa na recepção; só entra na montagem após atender.
     private Texture spritePapelPedido;
     private Texture[] spritesIngredientes;
     private Texture[][] spritesClientes;
+
+    private Ingrediente ingredienteSelecionado;
+    private Ingrediente ingredientePressionado;
+    // Compatibilidade com versões do LibGDX que não possuem isButtonJustReleased().
+    private boolean mouseLeftDownAnterior = false;
+    private float origemAnimacaoX;
+    private float origemAnimacaoY;
+    private float tempoAnimacaoIngrediente;
+    private boolean animandoIngrediente;
 
     private String resultadoPesquisa = "";
     private final CampoTexto campo = new CampoTexto();
@@ -131,12 +160,20 @@ public class JogoScreen extends ScreenAdapter {
         }
 
         animarClientes(delta);
+        if (animandoIngrediente) {
+            tempoAnimacaoIngrediente += delta;
+            if (tempoAnimacaoIngrediente >= 0.18f) animandoIngrediente = false;
+        }
         ScreenUtils.clear(0.13f, 0.14f, 0.18f, 1f);
         desenharFundo();
-        desenharPapeisPedidos();
-        desenharSpritesClientes();
-        desenharFormas();
-        desenharSpritesIngredientes();
+        if (telaCozinha) {
+            desenharPapeisPedidos();
+            desenharFormas();
+            desenharSpritesIngredientes();
+        } else {
+            desenharSpritesClientes();
+            desenharFormas();
+        }
         desenharTextos();
     }
 
@@ -169,6 +206,11 @@ public class JogoScreen extends ScreenAdapter {
     }
 
     private void tratarEntrada() {
+        boolean mouseLeftDown = Gdx.input.isButtonPressed(Input.Buttons.LEFT);
+        boolean mouseLeftSolto = mouseLeftDownAnterior && !mouseLeftDown;
+        mouseLeftDownAnterior = mouseLeftDown;
+        Vector3 mouse = mouseNoMundo();
+
         boolean acabou = campo.terminou();
         if (acabou) {
             String texto = campo.getResultado();
@@ -187,55 +229,177 @@ public class JogoScreen extends ScreenAdapter {
             campo.abrir("Pesquisar cliente pelo nome", "", 12, false);
             return;
         }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) partida.atenderCliente();
+        if (!telaCozinha && Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+            Pedido pedidoAceito = partida.atenderCliente();
+            if (pedidoAceito != null) {
+                telaCozinha = true;
+                ingredienteSelecionado = null;
+                ingredientePressionado = null;
+                animandoIngrediente = false;
+            }
+            return;
+        }
+        if (telaCozinha && Gdx.input.isKeyJustPressed(Input.Keys.R)) {
+            telaCozinha = false;
+            ingredientePressionado = null;
+            animandoIngrediente = false;
+            return;
+        }
+        if (!telaCozinha) {
+            // Na recepção, ESPAÇO ou botão entrega o hambúrguer já montado.
+            if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+                if (partida.getCozinha().getMontagem().tamanho() > 0) partida.entregar();
+            }
+            if (mouseLeftSolto && dentroBotao(mouse.x, mouse.y, BOTAO_ENTREGAR_X, BOTAO_ACAO_Y,
+                    BOTAO_ACAO_LARGURA, BOTAO_ACAO_ALTURA)) {
+                if (partida.getCozinha().getMontagem().tamanho() > 0) partida.entregar();
+            }
+            return; // Recepção não permite montar ingredientes.
+        }
 
         Ingrediente[] ingredientes = Ingrediente.values();
         for (int i = 0; i < TECLAS_INGREDIENTES.length && i < ingredientes.length; i++) {
             if (Gdx.input.isKeyJustPressed(TECLAS_INGREDIENTES[i])) {
-                partida.adicionarIngrediente(ingredientes[i]);
+                adicionarIngredienteComAnimacao(ingredientes[i], centroBotaoX(i), centroBotaoY(i));
             }
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.BACKSPACE)) partida.desfazerIngrediente();
-        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) partida.entregar();
+        // SPACE na cozinha apenas leva o jogador de volta à recepção para fazer a entrega.
+        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
+            telaCozinha = false;
+            ingredientePressionado = null;
+            animandoIngrediente = false;
+            return;
+        }
+
+        // Mouse: clicar num ingrediente seleciona; clicar na pilha o adiciona.
+        // Também aceita arrastar um ingrediente e soltá-lo sobre a área do hambúrguer.
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            ingredientePressionado = ingredienteNoBotao(mouse.x, mouse.y);
+        }
+        if (mouseLeftSolto) {
+            if (ingredientePressionado != null) {
+                if (dentroAreaMontagem(mouse.x, mouse.y)) {
+                    adicionarIngredienteComAnimacao(ingredientePressionado, centroBotaoX(ingredientePressionado.ordinal()),
+                            centroBotaoY(ingredientePressionado.ordinal()));
+                } else {
+                    ingredienteSelecionado = ingredientePressionado;
+                    adicionarIngredienteComAnimacao(ingredientePressionado, centroBotaoX(ingredientePressionado.ordinal()),
+                            centroBotaoY(ingredientePressionado.ordinal()));
+                }
+            } else if (dentroAreaMontagem(mouse.x, mouse.y) && ingredienteSelecionado != null) {
+                adicionarIngredienteComAnimacao(ingredienteSelecionado, centroBotaoX(ingredienteSelecionado.ordinal()),
+                        centroBotaoY(ingredienteSelecionado.ordinal()));
+            } else if (dentroBotao(mouse.x, mouse.y, BOTAO_DESFAZER_X, BOTAO_DESFAZER_Y,
+                    BOTAO_ACAO_LARGURA, BOTAO_ACAO_ALTURA)) {
+                partida.desfazerIngrediente();
+            } else if (dentroBotao(mouse.x, mouse.y, BOTAO_ENTREGAR_X, BOTAO_ACAO_Y,
+                    BOTAO_ACAO_LARGURA, BOTAO_ACAO_ALTURA)) {
+                // O botão na cozinha é para voltar à recepção, não entrega diretamente.
+                telaCozinha = false;
+                animandoIngrediente = false;
+            }
+            ingredientePressionado = null;
+        }
+    }
+
+    private Vector3 mouseNoMundo() {
+        Vector3 pos = new Vector3(Gdx.input.getX(), Gdx.input.getY(), 0f);
+        viewport.unproject(pos);
+        return pos;
+    }
+
+    private Ingrediente ingredienteNoBotao(float x, float y) {
+        Ingrediente[] todos = Ingrediente.values();
+        for (int i = 0; i < todos.length; i++) {
+            float bx = SELETOR_X + (i % 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_X);
+            float by = SELETOR_Y + (2 - i / 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_Y);
+            if (dentroBotao(x, y, bx, by, BOTAO_INGREDIENTE, BOTAO_INGREDIENTE) && partida.isDesbloqueado(todos[i])) {
+                return todos[i];
+            }
+        }
+        return null;
+    }
+
+    private float centroBotaoX(int indice) {
+        return SELETOR_X + (indice % 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_X) + BOTAO_INGREDIENTE / 2f;
+    }
+
+    private float centroBotaoY(int indice) {
+        return SELETOR_Y + (2 - indice / 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_Y) + BOTAO_INGREDIENTE / 2f;
+    }
+
+    private boolean dentroAreaMontagem(float x, float y) {
+        return dentroBotao(x, y, AREA_MONTAGEM_X, AREA_MONTAGEM_Y, AREA_MONTAGEM_LARGURA, AREA_MONTAGEM_ALTURA);
+    }
+
+    private boolean dentroBotao(float x, float y, float bx, float by, float largura, float altura) {
+        return x >= bx && x <= bx + largura && y >= by && y <= by + altura;
+    }
+
+    private void adicionarIngredienteComAnimacao(Ingrediente ingrediente, float origemX, float origemY) {
+        if (partida.adicionarIngrediente(ingrediente)) {
+            ingredienteSelecionado = ingrediente;
+            origemAnimacaoX = origemX;
+            origemAnimacaoY = origemY;
+            tempoAnimacaoIngrediente = 0f;
+            animandoIngrediente = true;
+        }
     }
 
     private void desenharFormas() {
         formas.setProjectionMatrix(camera.combined);
         formas.begin(ShapeRenderer.ShapeType.Filled);
-
-        formas.end();
-        formas.begin(ShapeRenderer.ShapeType.Filled);
-
-        int posicao = 0;
-        for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
-            Cliente cliente = no.getDado();
-            float x = cliente.getTelaX();
-            float y = cliente.getTelaY();
-            desenharBarra(x, y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
-                    cliente.getPercentualPaciencia());
-            posicao++;
+        if (telaCozinha) {
+            // Os painéis da montagem só existem na segunda tela (cozinha).
+            desenharPainel(25f, 95f, 265f, 275f, new Color(0.28f, 0.18f, 0.12f, 1f),
+                    new Color(0.72f, 0.48f, 0.25f, 1f));
+            desenharPainel(AREA_MONTAGEM_X, AREA_MONTAGEM_Y, AREA_MONTAGEM_LARGURA, AREA_MONTAGEM_ALTURA,
+                    new Color(0.24f, 0.18f, 0.14f, 1f), new Color(0.78f, 0.62f, 0.39f, 1f));
+            Ingrediente[] botoes = Ingrediente.values();
+            for (int i = 0; i < botoes.length; i++) {
+                float bx = SELETOR_X + (i % 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_X);
+                float by = SELETOR_Y + (2 - i / 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_Y);
+                Color base = partida.isDesbloqueado(botoes[i]) ? new Color(0.83f, 0.71f, 0.48f, 1f)
+                        : new Color(0.34f, 0.32f, 0.29f, 1f);
+                desenharPainel(bx, by, BOTAO_INGREDIENTE, BOTAO_INGREDIENTE, base,
+                        botoes[i] == ingredienteSelecionado ? new Color(0.95f, 0.78f, 0.26f, 1f)
+                                : new Color(0.48f, 0.32f, 0.18f, 1f));
+            }
+            desenharPainel(BOTAO_DESFAZER_X, BOTAO_DESFAZER_Y, BOTAO_ACAO_LARGURA, BOTAO_ACAO_ALTURA,
+                    new Color(0.48f, 0.31f, 0.19f, 1f), new Color(0.86f, 0.63f, 0.35f, 1f));
+            desenharPainel(BOTAO_ENTREGAR_X, BOTAO_ACAO_Y, BOTAO_ACAO_LARGURA, BOTAO_ACAO_ALTURA,
+                    new Color(0.30f, 0.49f, 0.26f, 1f), new Color(0.67f, 0.84f, 0.45f, 1f));
+        } else {
+            // Botão de entrega aparece na recepção, depois que o hambúrguer foi montado.
+            if (partida.getCozinha().getMontagem().tamanho() > 0) {
+                desenharPainel(BOTAO_ENTREGAR_X, BOTAO_ACAO_Y, BOTAO_ACAO_LARGURA, BOTAO_ACAO_ALTURA,
+                        new Color(0.30f, 0.49f, 0.26f, 1f), new Color(0.67f, 0.84f, 0.45f, 1f));
+            }
+            // Na recepção, barras de paciência dos clientes na fila.
+            for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
+                Cliente cliente = no.getDado();
+                desenharBarra(cliente.getTelaX(), cliente.getTelaY() + CLIENTE_ALTURA + 10f,
+                        CLIENTE_LARGURA, 8f, cliente.getPercentualPaciencia());
+            }
         }
-
-        // Quem já fez o pedido espera aqui, ao lado da fila, com a paciência ainda correndo.
-        int esperando = 0;
-        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
-            Pedido pedido = no.getDado();
-            float x = pedido.getCliente().getTelaX();
-            float y = pedido.getCliente().getTelaY();
-            desenharBarra(x, y + CLIENTE_ALTURA + 10f, CLIENTE_LARGURA, 8f,
-                    pedido.getCliente().getPercentualPaciencia());
-            esperando++;
-        }
-
-        // A pilha e os ícones dos ingredientes são desenhados com sprites, não retângulos.
-        Pilha<Ingrediente> montagem = partida.getCozinha().getMontagem();
         formas.end();
     }
 
+    private void desenharPainel(float x, float y, float largura, float altura, Color preenchimento, Color borda) {
+        formas.setColor(new Color(0.12f, 0.09f, 0.07f, 1f));
+        formas.rect(x - 4f, y - 4f, largura + 8f, altura + 8f);
+        formas.setColor(borda);
+        formas.rect(x - 2f, y - 2f, largura + 4f, altura + 4f);
+        formas.setColor(preenchimento);
+        formas.rect(x, y, largura, altura);
+    }
 
     /** Carrega o fundo estático do restaurante. Personagens, pedidos e montagem ficam em camadas separadas. */
     private void carregarSpritesCenario() {
         fundoRestaurante = new Texture(Gdx.files.internal("sprites/background_restaurante.png"));
+        fundoCozinha = new Texture(Gdx.files.internal("sprites/background_cozinha.png"));
+        fundoCozinha.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         spritePapelPedido = new Texture(Gdx.files.internal("sprites/papel_pedido.png"));
         spritePapelPedido.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         fundoRestaurante.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
@@ -262,13 +426,14 @@ public class JogoScreen extends ScreenAdapter {
     private void desenharFundo() {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
-        batch.draw(fundoRestaurante, 0f, 0f, LARGURA_MUNDO, ALTURA_MUNDO);
+        batch.draw(telaCozinha ? fundoCozinha : fundoRestaurante, 0f, 0f, LARGURA_MUNDO, ALTURA_MUNDO);
         batch.end();
     }
 
 
     /** Desenha cada pedido em um pergaminho separado, lado a lado. O mais novo fica à direita. */
     private void desenharPapeisPedidos() {
+        if (!telaCozinha) return;
         int quantidade = partida.getPedidosAtivos().tamanho();
         if (quantidade == 0) return;
         float passo = PAPEL_ESPACO;
@@ -287,6 +452,7 @@ public class JogoScreen extends ScreenAdapter {
 
     /** Desenha os clientes com sprite e altera a expressão/cor conforme a paciência. */
     private void desenharSpritesClientes() {
+        if (telaCozinha) return;
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
         for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
@@ -306,25 +472,45 @@ public class JogoScreen extends ScreenAdapter {
         batch.draw(sprite, cliente.getTelaX(), cliente.getTelaY(), CLIENTE_LARGURA, CLIENTE_ALTURA);
     }
 
-    /** Desenha os ingredientes montados e os ícones da legenda com sprites pixel art. */
+    /** Renderiza a estação: ingredientes clicáveis e o hambúrguer empilhado visualmente. */
     private void desenharSpritesIngredientes() {
+        if (!telaCozinha) return;
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
+        Ingrediente[] todos = Ingrediente.values();
+        for (int i = 0; i < todos.length; i++) {
+            float bx = SELETOR_X + (i % 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_X);
+            float by = SELETOR_Y + (2 - i / 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_Y);
+            Texture sprite = spritesIngredientes[i];
+            if (!partida.isDesbloqueado(todos[i])) batch.setColor(0.45f, 0.45f, 0.45f, 0.85f);
+            else batch.setColor(Color.WHITE);
+            batch.draw(sprite, bx + 14f, by + 21f, 42f, 42f);
+        }
+        batch.setColor(Color.WHITE);
+
+        // Durante o arraste, mostra um ícone seguindo o cursor.
+        if (Gdx.input.isButtonPressed(Input.Buttons.LEFT) && ingredientePressionado != null) {
+            Vector3 mouse = mouseNoMundo();
+            batch.draw(spritesIngredientes[ingredientePressionado.ordinal()], mouse.x - 24f, mouse.y - 24f, 48f, 48f);
+        }
+
         Pilha<Ingrediente> montagem = partida.getCozinha().getMontagem();
         int camada = montagem.tamanho() - 1;
         for (No<Ingrediente> no = montagem.getNoTopo(); no != null; no = no.getProximo()) {
             Texture sprite = spritesIngredientes[no.getDado().ordinal()];
-            batch.draw(sprite, PILHA_X + 56f, PILHA_Y + camada * 32f, 88f, 32f);
-            camada--;
-        }
-
-        Ingrediente[] todos = Ingrediente.values();
-        int linha = 0;
-        for (int i = 0; i < todos.length; i++) {
-            if (partida.isDesbloqueado(todos[i])) {
-                batch.draw(spritesIngredientes[i], LEGENDA_X, LEGENDA_TOPO - 15f - linha * 20f, 18f, 18f);
-                linha++;
+            float destinoX = PILHA_X;
+            float destinoY = PILHA_Y + camada * 34f;
+            if (animandoIngrediente && camada == montagem.tamanho() - 1) {
+                float t = Math.min(1f, tempoAnimacaoIngrediente / 0.18f);
+                float suave = t * t * (3f - 2f * t);
+                float x = origemAnimacaoX - 75f + (destinoX - (origemAnimacaoX - 75f)) * suave;
+                float y = origemAnimacaoY - 20f + (destinoY - (origemAnimacaoY - 20f)) * suave;
+                float escala = 0.55f + 0.45f * suave;
+                batch.draw(sprite, x, y, CAMADA_LARGURA * escala, CAMADA_ALTURA * escala);
+            } else {
+                batch.draw(sprite, destinoX, destinoY, CAMADA_LARGURA, CAMADA_ALTURA);
             }
+            camada--;
         }
         batch.end();
     }
@@ -342,102 +528,117 @@ public class JogoScreen extends ScreenAdapter {
     private void desenharTextos() {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
-        fonte.setColor(com.badlogic.gdx.graphics.Color.WHITE);
+        fonte.setColor(Color.WHITE);
         fonte.draw(batch, "Pontos: " + partida.getPontos()
                 + "    Vidas: " + partida.getVidas()
                 + "    Moedas: " + partida.getMoedas()
                 + "    Dia: " + partida.getNivel()
                 + " (" + partida.getEntreguesNoNivel() + "/" + partida.getMetaEntregas() + " entregas)", 20f, 630f);
-        fonte.draw(batch, "ENTER atende | 1-9 ingredientes | BACKSPACE desfaz | ESPACO entrega"
-                + " | F pesquisa | ESC menu", 20f, 608f);
-        if (campo.isAtivo()) {
-            fonte.draw(batch, "Pesquisando... (jogo pausado)", FILA_X, 40f);
-        } else if (!resultadoPesquisa.isEmpty()) {
+        if (!telaCozinha) {
+            fonte.draw(batch, "RECEPCAO  |  ENTER: atender  |  ESPACO/CLIQUE: entregar pedido pronto  |  F: pesquisar  |  ESC: menu", 20f, 608f);
+            if (partida.getCozinha().getMontagem().tamanho() > 0) {
+                fonte.setColor(new Color(1f, 0.9f, 0.55f, 1f));
+                fonte.draw(batch, "HAMBURGUER PRONTO! Entregue ao cliente", 330f, 100f);
+                fonte.setColor(Color.WHITE);
+                fonte.draw(batch, "SPACE", BOTAO_ENTREGAR_X + 23f, BOTAO_ACAO_Y + 27f);
+                fonte.draw(batch, "ENTREGAR", BOTAO_ENTREGAR_X + 15f, BOTAO_ACAO_Y + 12f);
+            }
+            fonte.draw(batch, "Fila de clientes", FILA_X, 440f);
+            if (partida.getFila().estaVazia()) {
+                fonte.draw(batch, "Aguardando clientes...", FILA_X, 400f);
+            } else {
+                fonte.draw(batch, "Pressione ENTER para aceitar o primeiro cliente", 20f, 70f);
+            }
+        } else {
+            fonte.draw(batch, "COZINHA  |  R: recepcao  |  1-9 ingredientes  |  BACKSPACE desfaz  |  ESPACO: ir entregar", 20f, 608f);
+            int quantidadePedidos = partida.getPedidosAtivos().tamanho();
+            int indicePedido = 0;
+            float passoPapeis = PAPEL_ESPACO;
+            if (quantidadePedidos > 7) passoPapeis = Math.min(PAPEL_ESPACO, 808f / (quantidadePedidos - 1));
+            float larguraPapel = quantidadePedidos > 7 ? Math.min(PAPEL_LARGURA, passoPapeis - 3f) : PAPEL_LARGURA;
+            float escalaAnterior = fonte.getScaleX();
+            fonte.getData().setScale(0.62f);
+            GlyphLayout layout = new GlyphLayout();
+            for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
+                Pedido pedido = no.getDado();
+                float x = PAPEL_X_DIREITA - (quantidadePedidos - 1 - indicePedido) * passoPapeis;
+                float y = PAPEL_Y;
+                float margem = Math.max(8f, larguraPapel * 0.10f);
+                float larguraTexto = larguraPapel - margem * 2f;
+                fonte.setColor(0.20f, 0.14f, 0.10f, 1f);
+                fonte.draw(batch, "PEDIDO #" + pedido.getId(), x + margem, y + PAPEL_ALTURA - 22f);
+                fonte.draw(batch, pedido.getCliente().getNome(), x + margem, y + PAPEL_ALTURA - 36f);
+                fonte.draw(batch, pedido.getReceita().getNome(), x + margem, y + PAPEL_ALTURA - 51f);
+                fonte.draw(batch, "ITENS:", x + margem, y + PAPEL_ALTURA - 65f);
+                StringBuilder ingredientesTexto = new StringBuilder();
+                for (int k = 0; k < pedido.getReceita().getQuantidade(); k++) {
+                    if (k > 0) ingredientesTexto.append(", ");
+                    ingredientesTexto.append(pedido.getReceita().getIngrediente(k).getNome());
+                }
+                String[] partes = ingredientesTexto.toString().split(", ");
+                String linhaTexto = "";
+                int linha = 0;
+                for (String parte : partes) {
+                    String candidata = linhaTexto.isEmpty() ? parte : linhaTexto + ", " + parte;
+                    layout.setText(fonte, candidata);
+                    if (layout.width > larguraTexto && !linhaTexto.isEmpty()) {
+                        fonte.draw(batch, linhaTexto, x + margem, y + PAPEL_ALTURA - 79f - linha * 11f);
+                        linhaTexto = parte;
+                        linha++;
+                    } else linhaTexto = candidata;
+                }
+                if (!linhaTexto.isEmpty()) fonte.draw(batch, linhaTexto, x + margem, y + PAPEL_ALTURA - 79f - linha * 11f);
+                fonte.draw(batch, pedido.getStatus().toString(), x + margem, y + 23f);
+                fonte.setColor(Color.WHITE);
+                indicePedido++;
+            }
+            fonte.getData().setScale(escalaAnterior);
+            fonte.setColor(new Color(0.98f, 0.88f, 0.65f, 1f));
+            fonte.draw(batch, "INGREDIENTES", 42f, 354f);
+            fonte.getData().setScale(0.68f);
+            Ingrediente[] todos = Ingrediente.values();
+            for (int i = 0; i < todos.length; i++) {
+                float bx = SELETOR_X + (i % 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_X);
+                float by = SELETOR_Y + (2 - i / 3) * (BOTAO_INGREDIENTE + SELETOR_GAP_Y);
+                fonte.setColor(partida.isDesbloqueado(todos[i]) ? new Color(0.20f, 0.13f, 0.08f, 1f)
+                        : new Color(0.68f, 0.65f, 0.60f, 1f));
+                String nome = todos[i].getNome();
+                GlyphLayout nomeLayout = new GlyphLayout(fonte, nome);
+                fonte.draw(batch, nome, bx + (BOTAO_INGREDIENTE - nomeLayout.width) / 2f, by + 14f);
+                fonte.setColor(new Color(0.32f, 0.22f, 0.13f, 1f));
+                fonte.draw(batch, String.valueOf(i + 1), bx + 5f, by + BOTAO_INGREDIENTE - 5f);
+            }
+            fonte.getData().setScale(1f);
+            fonte.setColor(new Color(0.98f, 0.88f, 0.65f, 1f));
+            fonte.draw(batch, "MONTE SEU HAMBURGUER", AREA_MONTAGEM_X + 14f, AREA_MONTAGEM_Y + AREA_MONTAGEM_ALTURA - 15f);
+            fonte.setColor(Color.WHITE);
+            fonte.draw(batch, "Clique ou arraste ingrediente", AREA_MONTAGEM_X + 15f, AREA_MONTAGEM_Y + 22f);
+            fonte.draw(batch, "BACKSPACE", BOTAO_DESFAZER_X + 12f, BOTAO_DESFAZER_Y + 27f);
+            fonte.draw(batch, "DESFAZER", BOTAO_DESFAZER_X + 12f, BOTAO_DESFAZER_Y + 12f);
+            fonte.draw(batch, "SPACE", BOTAO_ENTREGAR_X + 23f, BOTAO_ACAO_Y + 27f);
+            fonte.draw(batch, "RECEPCAO", BOTAO_ENTREGAR_X + 10f, BOTAO_ACAO_Y + 12f);
+            Pedido emPreparo = partida.getPedidoEmPreparo();
+            fonte.setColor(new Color(1f, 0.88f, 0.50f, 1f));
+            fonte.draw(batch, emPreparo != null ? "Preparando: " + emPreparo.getReceita().getNome()
+                    : "Atenda um cliente na recepcao", 315f, 425f);
+            fonte.setColor(Color.WHITE);
+            fonte.draw(batch, "Camadas: " + partida.getCozinha().tamanho() + "/" + com.hamburgueria.logica.Cozinha.ALTURA_MAXIMA,
+                    AREA_MONTAGEM_X + 5f, 405f);
+        }
+        if (campo.isAtivo()) fonte.draw(batch, "Pesquisando... (jogo pausado)", FILA_X, 40f);
+        else if (!resultadoPesquisa.isEmpty()) {
             fonte.setColor(0.6f, 0.9f, 1f, 1f);
             fonte.draw(batch, resultadoPesquisa, FILA_X, 40f);
-            fonte.setColor(com.badlogic.gdx.graphics.Color.WHITE);
+            fonte.setColor(Color.WHITE);
         }
-        fonte.draw(batch, "Fila de clientes", FILA_X, 440f);
-        fonte.draw(batch, "Esperando o lanche", FILA_X, 590f);
-
-        int quantidadePedidos = partida.getPedidosAtivos().tamanho();
-        int indicePedido = 0;
-        float passoPapeis = PAPEL_ESPACO;
-        if (quantidadePedidos > 7) passoPapeis = Math.min(PAPEL_ESPACO, 808f / (quantidadePedidos - 1));
-        float larguraPapel = quantidadePedidos > 7 ? Math.min(PAPEL_LARGURA, passoPapeis - 3f) : PAPEL_LARGURA;
-        float escalaAnterior = fonte.getScaleX();
-        fonte.getData().setScale(0.62f);
-        GlyphLayout layout = new GlyphLayout();
-        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
-            Pedido pedido = no.getDado();
-            float x = PAPEL_X_DIREITA - (quantidadePedidos - 1 - indicePedido) * passoPapeis;
-            float y = PAPEL_Y;
-            float margem = Math.max(8f, larguraPapel * 0.10f);
-            float larguraTexto = larguraPapel - margem * 2f;
-            fonte.setColor(0.20f, 0.14f, 0.10f, 1f);
-            fonte.draw(batch, "PEDIDO #" + pedido.getId(), x + margem, y + PAPEL_ALTURA - 22f);
-            fonte.draw(batch, pedido.getCliente().getNome(), x + margem, y + PAPEL_ALTURA - 36f);
-            fonte.draw(batch, pedido.getReceita().getNome(), x + margem, y + PAPEL_ALTURA - 51f);
-            fonte.draw(batch, "ITENS:", x + margem, y + PAPEL_ALTURA - 65f);
-
-            StringBuilder ingredientesTexto = new StringBuilder();
-            for (int k = 0; k < pedido.getReceita().getQuantidade(); k++) {
-                if (k > 0) ingredientesTexto.append(", ");
-                ingredientesTexto.append(pedido.getReceita().getIngrediente(k).getNome());
-            }
-            String[] partes = ingredientesTexto.toString().split(", ");
-            String linhaTexto = "";
-            int linha = 0;
-            for (String parte : partes) {
-                String candidata = linhaTexto.isEmpty() ? parte : linhaTexto + ", " + parte;
-                layout.setText(fonte, candidata);
-                if (layout.width > larguraTexto && !linhaTexto.isEmpty()) {
-                    fonte.draw(batch, linhaTexto, x + margem, y + PAPEL_ALTURA - 79f - linha * 11f);
-                    linhaTexto = parte;
-                    linha++;
-                } else linhaTexto = candidata;
-            }
-            if (!linhaTexto.isEmpty()) fonte.draw(batch, linhaTexto, x + margem, y + PAPEL_ALTURA - 79f - linha * 11f);
-            fonte.draw(batch, pedido.getStatus().toString(), x + margem, y + 23f);
-            fonte.setColor(com.badlogic.gdx.graphics.Color.WHITE);
-            indicePedido++;
-        }
-        fonte.getData().setScale(escalaAnterior);
-
-        int posicao = 0;
-        for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
-            Cliente cliente = no.getDado();
-            fonte.draw(batch, cliente.getNome(), cliente.getTelaX(), cliente.getTelaY() - 6f);
-            posicao++;
-        }
-
-        int aguardando = 0;
-        for (No<Pedido> no = partida.getPedidosAtivos().getInicio(); no != null; no = no.getProximo()) {
-            Cliente cliente = no.getDado().getCliente();
-            fonte.draw(batch, cliente.getNome(), cliente.getTelaX(), cliente.getTelaY() - 6f);
-            aguardando++;
-        }
-
-        fonte.draw(batch, "Ingredientes", LEGENDA_X, LEGENDA_TOPO + 22f);
-        Ingrediente[] todos = Ingrediente.values();
-        int linha = 0;
-        for (int i = 0; i < todos.length; i++) {
-            if (partida.isDesbloqueado(todos[i])) {
-                fonte.draw(batch, (i + 1) + " " + todos[i].getNome(), LEGENDA_X + 22f,
-                        LEGENDA_TOPO - linha * 20f);
-                linha++;
-            }
-        }
-
-        fonte.draw(batch, "Cozinha", 20f, 280f);
-        Pedido emPreparo = partida.getPedidoEmPreparo();
-        fonte.draw(batch, emPreparo != null
-                ? "Montando: " + emPreparo.getReceita().toString()
-                : "Atenda um cliente e comece a montar o lanche", 20f, 258f);
-        fonte.draw(batch, "Camadas: " + partida.getCozinha().tamanho(), 20f, 236f);
         fonte.draw(batch, partida.getUltimoEvento(), 20f, 24f);
+        if (!telaCozinha) {
+            for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
+                Cliente cliente = no.getDado();
+                fonte.draw(batch, cliente.getNome(), cliente.getTelaX(), cliente.getTelaY() - 6f);
+            }
+        }
         batch.end();
-
         campo.desenhar(camera.combined, formas, batch, fonte, Gdx.graphics.getDeltaTime());
     }
 
@@ -458,6 +659,7 @@ public class JogoScreen extends ScreenAdapter {
         if (formas != null) formas.dispose();
         if (fonte != null) fonte.dispose();
         if (fundoRestaurante != null) fundoRestaurante.dispose();
+        if (fundoCozinha != null) fundoCozinha.dispose();
         if (spritePapelPedido != null) spritePapelPedido.dispose();
         if (spritesIngredientes != null) {
             for (Texture sprite : spritesIngredientes) if (sprite != null) sprite.dispose();
@@ -468,6 +670,7 @@ public class JogoScreen extends ScreenAdapter {
             }
         }
         fundoRestaurante = null;
+        fundoCozinha = null;
         spritePapelPedido = null;
         spritesIngredientes = null;
         spritesClientes = null;

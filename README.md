@@ -94,3 +94,15 @@ Os ingredientes do hambúrguer agora são exibidos por sprites pixel art individ
 - Todos os clientes da fila perdem paciência desde a chegada, não apenas o primeiro; pedidos ativos também perdem paciência mais rápido nos dias avançados.
 - A velocidade de perda de paciência aumenta 12% por dia após o primeiro.
 
+
+## Montagem visual de hambúrgueres
+
+A estação de montagem agora possui uma interface visual: os ingredientes desbloqueados são exibidos em botões pixel art. Clique em um ingrediente para adicioná-lo, arraste-o até a área central, ou use as teclas 1–9. A pilha é mostrada em camadas e há animação de entrada. `BACKSPACE` desfaz a última camada e `ESPAÇO`/botão Entregar confere o pedido. O painel também mostra qual ingrediente vem a seguir na receita.
+
+## Fluxo de telas: Recepção e Cozinha
+
+- A partida começa na **Recepção**, com os clientes e a fila. A montagem do hambúrguer e os controles de ingredientes ficam ocultos.
+- Pressione **ENTER** para atender o primeiro cliente. Se o atendimento for aceito, a tela muda para a **Cozinha** e o pedido aparece no papel.
+- Na Cozinha, monte o hambúrguer usando mouse/arrastar ou teclas `1` a `9`, `BACKSPACE` para desfazer e `ESPAÇO` para entregar.
+- Pressione **R** para voltar à Recepção. O tempo, fila e paciência continuam avançando.
+- O fundo da cozinha é a imagem `assets/sprites/background_cozinha.png`, um único PNG decorativo.
