@@ -116,6 +116,11 @@ public class JogoScreen extends ScreenAdapter {
     private String resultadoPesquisa = "";
     private final CampoTexto campo = new CampoTexto();
 
+    // Aviso visual quando um cliente novo entra na fila da recepção.
+    private final Array<Cliente> clientesJaNotificados = new Array<>();
+    private float tempoNotificacaoCliente = 0f;
+    private String textoNotificacaoCliente = "";
+
     public JogoScreen(HamburgueriaGame jogo, Partida partida) {
         this.jogo = jogo;
         this.partida = partida;
@@ -148,6 +153,7 @@ public class JogoScreen extends ScreenAdapter {
         // A partida fica parada enquanto o jogador digita o nome da pesquisa.
         if (!campo.isAtivo()) {
             partida.atualizar(Math.min(delta, 0.1f));
+            detectarChegadaDeClientes(delta);
         }
 
         if (partida.estaEmFimDeJogo()) {
@@ -175,6 +181,65 @@ public class JogoScreen extends ScreenAdapter {
             desenharFormas();
         }
         desenharTextos();
+        desenharNotificacaoCliente();
+    }
+
+    /** Mostra uma notificação sempre que um novo cliente aparece na fila da recepção. */
+    private void detectarChegadaDeClientes(float delta) {
+        if (tempoNotificacaoCliente > 0f) {
+            tempoNotificacaoCliente = Math.max(0f, tempoNotificacaoCliente - delta);
+        }
+
+        int novos = 0;
+        for (No<Cliente> no = partida.getFila().getNoInicio(); no != null; no = no.getProximo()) {
+            Cliente cliente = no.getDado();
+            if (!clientesJaNotificados.contains(cliente, true)) {
+                clientesJaNotificados.add(cliente);
+                novos++;
+            }
+        }
+
+        if (novos > 0) {
+            tempoNotificacaoCliente = 4.2f;
+            int totalFila = partida.getFila().tamanho();
+            if (novos == 1) {
+                textoNotificacaoCliente = "CLIENTE CHEGOU!  Fila: " + totalFila;
+            } else {
+                textoNotificacaoCliente = novos + " CLIENTES CHEGARAM!  Fila: " + totalFila;
+            }
+        }
+    }
+
+    /** Desenha o aviso em destaque, inclusive quando o jogador estiver na cozinha. */
+    private void desenharNotificacaoCliente() {
+        if (tempoNotificacaoCliente <= 0f || textoNotificacaoCliente.isEmpty()) return;
+
+        float alpha = tempoNotificacaoCliente < 0.65f ? tempoNotificacaoCliente / 0.65f : 1f;
+        float x = 260f;
+        float y = 535f;
+        float largura = 440f;
+        float altura = 58f;
+
+        formas.setProjectionMatrix(camera.combined);
+        formas.begin(ShapeRenderer.ShapeType.Filled);
+        formas.setColor(0.12f, 0.08f, 0.05f, 0.92f * alpha);
+        formas.rect(x - 5f, y - 5f, largura + 10f, altura + 10f);
+        formas.setColor(0.95f, 0.66f, 0.20f, alpha);
+        formas.rect(x - 2f, y - 2f, largura + 4f, altura + 4f);
+        formas.setColor(0.34f, 0.20f, 0.10f, 0.96f * alpha);
+        formas.rect(x, y, largura, altura);
+        formas.end();
+
+        batch.setProjectionMatrix(camera.combined);
+        batch.begin();
+        fonte.setColor(1f, 0.88f, 0.45f, alpha);
+        fonte.draw(batch, "!  " + textoNotificacaoCliente, x + 18f, y + 36f);
+        fonte.setColor(Color.WHITE);
+        String instrucao = telaCozinha
+                ? "Pressione R para ir atender na recepcao"
+                : "Pressione ENTER para atender o cliente";
+        fonte.draw(batch, instrucao, x + 18f, y + 17f);
+        batch.end();
     }
 
     /** Faz cada cliente andar até o lugar dele: o slot na fila ou o ponto de espera do lanche. */
@@ -229,6 +294,13 @@ public class JogoScreen extends ScreenAdapter {
             campo.abrir("Pesquisar cliente pelo nome", "", 12, false);
             return;
         }
+        // R alterna entre recepção e cozinha, independentemente da tela atual.
+        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
+            telaCozinha = !telaCozinha;
+            ingredientePressionado = null;
+            animandoIngrediente = false;
+            return;
+        }
         if (!telaCozinha && Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
             Pedido pedidoAceito = partida.atenderCliente();
             if (pedidoAceito != null) {
@@ -237,12 +309,6 @@ public class JogoScreen extends ScreenAdapter {
                 ingredientePressionado = null;
                 animandoIngrediente = false;
             }
-            return;
-        }
-        if (telaCozinha && Gdx.input.isKeyJustPressed(Input.Keys.R)) {
-            telaCozinha = false;
-            ingredientePressionado = null;
-            animandoIngrediente = false;
             return;
         }
         if (!telaCozinha) {
