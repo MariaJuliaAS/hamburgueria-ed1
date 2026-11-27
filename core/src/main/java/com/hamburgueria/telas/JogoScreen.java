@@ -99,6 +99,7 @@ public class JogoScreen extends ScreenAdapter {
     private BitmapFont fonte;
     private Texture fundoRestaurante;
     private Texture fundoCozinha;
+    private Texture hudPainel, hudTrofeu, hudCoracao, hudMoedas, hudCalendario;
     private boolean telaCozinha = false; // Começa na recepção; só entra na montagem após atender.
     private Texture spritePapelPedido;
     private Texture[] spritesIngredientes;
@@ -136,6 +137,7 @@ public class JogoScreen extends ScreenAdapter {
         fonte = new BitmapFont();
         fonte.getRegion().getTexture().setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         carregarSpritesCenario();
+        carregarSpritesHud();
     }
 
     @Override
@@ -462,6 +464,18 @@ public class JogoScreen extends ScreenAdapter {
     }
 
     /** Carrega o fundo estático do restaurante. Personagens, pedidos e montagem ficam em camadas separadas. */
+    private void carregarSpritesHud() {
+        hudPainel = new Texture(Gdx.files.internal("sprites/hud/painel.png"));
+        hudTrofeu = new Texture(Gdx.files.internal("sprites/hud/trofeu.png"));
+        hudCoracao = new Texture(Gdx.files.internal("sprites/hud/coracao.png"));
+        hudMoedas = new Texture(Gdx.files.internal("sprites/hud/moedas.png"));
+        hudCalendario = new Texture(Gdx.files.internal("sprites/hud/calendario.png"));
+        Texture[] hud = {hudPainel, hudTrofeu, hudCoracao, hudMoedas, hudCalendario};
+        for (Texture textura : hud) {
+            textura.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        }
+    }
+
     private void carregarSpritesCenario() {
         fundoRestaurante = new Texture(Gdx.files.internal("sprites/background_restaurante.png"));
         fundoCozinha = new Texture(Gdx.files.internal("sprites/background_cozinha.png"));
@@ -591,17 +605,47 @@ public class JogoScreen extends ScreenAdapter {
         formas.rect(x, y, largura * percentual, altura);
     }
 
+    /** HUD superior em pixel art, seguindo a referência visual enviada. */
+    private void desenharHudSuperior() {
+        // Quatro placas independentes para manter alinhamento e espaçamento consistentes.
+        batch.draw(hudPainel, 18f, 581f, 220f, 46f);
+        batch.draw(hudPainel, 241f, 581f, 292f, 46f);
+        batch.draw(hudPainel, 536f, 581f, 205f, 46f);
+        batch.draw(hudPainel, 744f, 581f, 198f, 46f);
+
+        batch.draw(hudTrofeu, 29f, 587f, 27f, 32f);
+        batch.draw(hudCoracao, 252f, 590f, 25f, 25f);
+        batch.draw(hudCoracao, 279f, 590f, 25f, 25f);
+        batch.draw(hudCoracao, 306f, 590f, 25f, 25f);
+        batch.draw(hudCoracao, 333f, 590f, 25f, 25f);
+        batch.draw(hudMoedas, 548f, 586f, 31f, 33f);
+        batch.draw(hudCalendario, 756f, 586f, 31f, 33f);
+
+        float escala = fonte.getScaleX();
+        fonte.getData().setScale(1.05f);
+        fonte.setColor(1f, 0.78f, 0.32f, 1f);
+        fonte.draw(batch, "PONTOS: " + partida.getPontos(), 61f, 610f);
+        fonte.draw(batch, "VIDAS: " + partida.getVidas(), 369f, 610f);
+        fonte.draw(batch, "MOEDAS: " + partida.getMoedas(), 584f, 610f);
+        fonte.draw(batch, "DIA: " + partida.getNivel() + " (" + partida.getEntreguesNoNivel()
+                + "/" + partida.getMetaEntregas() + ")", 791f, 610f);
+
+        fonte.getData().setScale(0.88f);
+        fonte.setColor(1f, 1f, 0.94f, 1f);
+        String instrucoes = telaCozinha
+                ? "COZINHA  |  [R]: recepção  |  1-9 ingredientes  |  [BACKSPACE] - desfaz  |  [ESPAÇO] - ir entregar"
+                : "RECEPÇÃO  |  [ENTER]: atender  |  [ESPAÇO/CLIQUE]: entregar pedido pronto  |  [F]: pesquisar  |  [ESC]: menu";
+        fonte.draw(batch, instrucoes, 28f, 566f);
+        fonte.getData().setScale(escala);
+        fonte.setColor(Color.WHITE);
+    }
+
     private void desenharTextos() {
         batch.setProjectionMatrix(camera.combined);
         batch.begin();
+        desenharHudSuperior();
         fonte.setColor(Color.WHITE);
-        fonte.draw(batch, "Pontos: " + partida.getPontos()
-                + "    Vidas: " + partida.getVidas()
-                + "    Moedas: " + partida.getMoedas()
-                + "    Dia: " + partida.getNivel()
-                + " (" + partida.getEntreguesNoNivel() + "/" + partida.getMetaEntregas() + " entregas)", 20f, 630f);
         if (!telaCozinha) {
-            fonte.draw(batch, "RECEPCAO  |  ENTER: atender  |  ESPACO/CLIQUE: entregar pedido pronto  |  F: pesquisar  |  ESC: menu", 20f, 608f);
             if (partida.getCozinha().getMontagem().tamanho() > 0) {
                 fonte.setColor(new Color(1f, 0.9f, 0.55f, 1f));
                 fonte.draw(batch, "HAMBURGUER PRONTO! Entregue ao cliente", 330f, 100f);
@@ -616,7 +660,6 @@ public class JogoScreen extends ScreenAdapter {
                 fonte.draw(batch, "Pressione ENTER para aceitar o primeiro cliente", 20f, 70f);
             }
         } else {
-            fonte.draw(batch, "COZINHA  |  R: recepcao  |  1-9 ingredientes  |  BACKSPACE desfaz  |  ESPACO: ir entregar", 20f, 608f);
             int quantidadePedidos = partida.getPedidosAtivos().tamanho();
             int indicePedido = 0;
             float passoPapeis = PAPEL_ESPACO;
@@ -726,6 +769,11 @@ public class JogoScreen extends ScreenAdapter {
         if (fonte != null) fonte.dispose();
         if (fundoRestaurante != null) fundoRestaurante.dispose();
         if (fundoCozinha != null) fundoCozinha.dispose();
+        if (hudPainel != null) hudPainel.dispose();
+        if (hudTrofeu != null) hudTrofeu.dispose();
+        if (hudCoracao != null) hudCoracao.dispose();
+        if (hudMoedas != null) hudMoedas.dispose();
+        if (hudCalendario != null) hudCalendario.dispose();
         if (spritePapelPedido != null) spritePapelPedido.dispose();
         if (spritesIngredientes != null) {
             for (Texture sprite : spritesIngredientes) if (sprite != null) sprite.dispose();
